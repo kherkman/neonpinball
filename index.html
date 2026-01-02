@@ -1,0 +1,1609 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Neon Pinball - Editor Edition</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    <script src="components.js"></script>
+    
+    <!-- Level files (valinnaiset) -->
+    <script src="level1.js" onerror="console.log('Level 1 not found')"></script>
+    <script src="level2.js" onerror="console.log('Level 2 not found')"></script>
+    <script src="level3.js" onerror="console.log('Level 3 not found')"></script>
+
+    <style>
+        body {
+            margin: 0; padding: 0;
+            background-color: #000; /* Pelkkä musta tausta selaimelle */
+            overflow: hidden;
+            font-family: 'Courier New', Courier, monospace;
+            touch-action: none;
+            user-select: none;
+            color: #eee;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        #edit-btn {
+            position: absolute; top: 15px; left: 15px;
+            background: rgba(0,0,0,0.5); border: 1px solid #0ff; color: #0ff;
+            padding: 8px 12px; cursor: pointer; z-index: 100;
+            font-family: inherit; font-weight: bold; text-transform: uppercase;
+        }
+        #edit-btn.active { background: #0ff; color: #000; }
+
+        #reset-btn {
+            position: absolute; top: 15px; left: 120px;
+            background: rgba(0,0,0,0.5); border: 1px solid #ff4444; color: #ff4444;
+            padding: 8px 12px; cursor: pointer; z-index: 100;
+            font-family: inherit; font-weight: bold; text-transform: uppercase;
+        }
+        #reset-btn:active { background: #ff4444; color: #000; }
+
+        #edit-menu {
+            display: none;
+            position: absolute; top: 55px; left: 15px;
+            background: rgba(0, 0, 0, 0.95);
+            border: 1px solid #444; padding: 15px;
+            z-index: 101; width: 220px;
+            box-shadow: 5px 5px 15px rgba(0,0,0,0.8);
+            max-height: 80vh; overflow-y: auto;
+        }
+
+        #game-wrapper {
+            position: relative;
+            width: 100%; height: 100%;
+            display: flex; justify-content: center; align-items: center;
+            transform: translateY(-50px);
+            /* Taustakuva siirretty tänne, jotta se rajaantuu pelialueelle */
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            background-attachment: scroll; 
+            border-left: 1px solid #111;
+            border-right: 1px solid #111;
+        }
+
+        #bg-fade-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 0%; /* Tätä säädetään JS:llä */
+            background: linear-gradient(to bottom, #000 0%, transparent 100%);
+            z-index: 1; /* Taustakuvan päällä, pelin alla */
+            pointer-events: none; /* Pallo ei törmää tähän */
+        }
+        /* Varmistetaan, että canvas on varmasti tämän päällä */
+        canvas {
+            position: relative;  
+            z-index: 5;   
+            box-shadow: 0 0 40px rgba(0, 255, 204, 0.2);
+            border: 2px solid #333;
+            border-radius: 4px;
+            background: transparent !important; 
+            display: block;
+            margin: auto; 
+        }
+
+        #ui-layer {
+            position: absolute; top: 15%; left: 50%;
+            transform: translateX(-50%);
+            color: #0ff; text-shadow: 0 0 10px #0ff;
+            pointer-events: none; z-index: 10;
+        }
+        #score { font-size: 8vh; font-weight: bold; margin: 0; }
+
+        #lives-container {
+            position: absolute; top: 15px; right: 15px;
+            width: 120px; 
+            display: flex; flex-wrap: wrap; 
+            justify-content: flex-end; gap: 5px;
+            z-index: 20; pointer-events: none;
+        }
+        .life-ball {
+            width: 12px; height: 12px;
+            border-radius: 50%;
+            background: #fff;
+            box-shadow: 0 0 5px #0ff;
+            border: 1px solid #333;
+        }
+
+        /* --- INTRO SCREEN --- */
+        #intro-screen {
+            display: flex;
+            position: absolute; top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(5, 5, 5, 0.95);
+            z-index: 300;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+        
+        #intro-screen h1 {
+            font-size: 8vh; margin: 0 0 20px 0;
+            color: #fff;
+            text-shadow: 0 0 10px #0ff, 0 0 20px #0ff, 0 0 40px #00ffff;
+            letter-spacing: 5px;
+        }
+
+        .intro-ball {
+            width: 50px; height: 50px;
+            background: radial-gradient(circle at 30% 30%, #fff, #00ffcc);
+            border-radius: 50%;
+            box-shadow: 0 0 20px #00ffcc;
+            margin-bottom: 40px;
+            animation: bounce 2s infinite ease-in-out;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-20px); }
+        }
+
+        #level-select {
+            padding: 10px 20px;
+            font-size: 18px;
+            background: #222;
+            color: #0ff;
+            border: 1px solid #0ff;
+            margin-bottom: 10px;
+            font-family: inherit;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.2);
+        }
+
+        #start-game-btn {
+            padding: 15px 40px;
+            font-size: 24px;
+            background: #004433;
+            color: #fff;
+            border: 2px solid #0ff;
+            cursor: pointer;
+            font-family: inherit;
+            font-weight: bold;
+            text-transform: uppercase;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.4);
+            transition: all 0.2s;
+        }
+        #start-game-btn:hover { background: #006644; transform: scale(1.05); }
+
+        .key-hint {
+            margin-top: 20px; font-size: 12px; color: #888;
+        }
+
+        /* --- GAME OVER --- */
+        #game-over-overlay {
+            display: none;
+            position: absolute; top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 200;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: #ff4444;
+            text-shadow: 0 0 20px #ff0000;
+            cursor: pointer;
+        }
+        #game-over-overlay h1 { font-size: 60px; margin: 0 0 20px 0; }
+        #game-over-overlay p { font-size: 24px; color: #fff; animation: blink 1.5s infinite; }
+
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
+
+        .tool-btn {
+            display: block; width: 100%; margin-bottom: 8px;
+            padding: 10px; background: #111; border: 1px solid #555;
+            color: #fff; text-align: left; cursor: pointer;
+        }
+        .tool-btn.active { background: #004433; border-color: #0ff; }
+        .tool-btn.danger { border-color: #ff4444; color: #ffcccc; }
+        .tool-btn.danger.active { background: #440000; border-color: #ff0000; }
+        
+        .slider-container { margin-top: 10px; margin-bottom: 10px; border-top: 1px solid #333; padding-top: 10px; }
+        .slider-label { font-size: 11px; color: #aaa; display: flex; justify-content: space-between; }
+        input[type=range] { width: 100%; margin-top: 5px; accent-color: #0ff; }
+        input[type=number] { width: 60px; background: #222; color: #fff; border: 1px solid #555; }
+
+        .add-row {
+            display: flex; gap: 5px; margin-top: 15px; border-top: 1px solid #333; padding-top: 10px;
+        }
+        select {
+            flex: 2; background: #222; color: #fff; border: 1px solid #555; padding: 5px; font-size: 12px;
+        }
+        .add-btn {
+            flex: 1; background: #004433; border: 1px solid #0ff; color: #fff; cursor: pointer; font-weight: bold;
+        }
+
+        .io-row { display: flex; gap: 5px; margin-top: 10px; border-top: 1px solid #333; padding-top: 10px; }
+        .io-btn { flex: 1; padding: 8px; background: #333; border: none; color: white; cursor: pointer; font-size: 10px; text-align: center; }
+        .io-btn.active { background: #004433; border: 1px solid #0ff; }
+        .io-btn-small { flex: 0.3; background: #500; }
+
+        #touch-controls {
+            position: absolute; bottom: 80px;
+            left: 0; width: 100%;
+            display: flex; 
+            justify-content: space-between; 
+            padding: 0 40px; 
+            box-sizing: border-box;
+            z-index: 50; pointer-events: none;
+            opacity: 1; 
+        }
+        .game-btn {
+            pointer-events: auto; width: 80px; height: 80px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(0, 255, 255, 0.3);
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 24px; font-weight: bold;
+            display: flex; justify-content: center; align-items: center;
+            backdrop-filter: blur(2px);
+            touch-action: manipulation;
+        }
+        .game-btn:active, .game-btn.pressed {
+            background: rgba(0, 255, 255, 0.4); transform: scale(0.95);
+            color: #fff; border-color: #0ff;
+        }
+    </style>
+</head>
+<body>
+
+<button id="edit-btn" onclick="toggleEditMode()">EDIT (E)</button>
+<button id="reset-btn" onclick="resetBall()">RESET (R)</button>
+
+<div id="lives-container"></div>
+
+<!-- INTRO SCREEN -->
+<div id="intro-screen">
+    <h1>NEON PINBALL</h1>
+    <div class="intro-ball"></div>
+    <button id="start-game-btn" onclick="startGame()">START GAME</button>
+    <div class="key-hint">[ SPACE ] or [ J ] to Select</div>
+    <select id="level-select">
+        <option value="default">Default Table</option>
+    </select>    
+
+</div>
+
+<!-- GAME OVER OVERLAY -->
+<div id="game-over-overlay" onclick="goToIntro()">
+    <h1>GAME OVER</h1>
+    <p>Tap / Space / J to Main Menu</p>
+</div>
+
+<div id="edit-menu">
+    <div style="margin-bottom:10px; color:#888; font-size:12px;">TYÖKALUT</div>
+    <button class="tool-btn active" id="btn-move" onclick="selectTool('move')">✢ SIIRRÄ</button>
+    <button class="tool-btn danger" id="btn-delete" onclick="selectTool('delete')">🗑 POISTA</button>
+    <button class="tool-btn" id="btn-camy" onclick="selectTool('camy')">📸 CAM-Y</button>
+    
+    <button class="tool-btn active" id="btn-camera" onclick="toggleCamera()" style="margin-top: 5px;">📷 AUTO-CAM: ON</button>
+    
+    <div style="margin-top:5px; font-size:11px; color:#aaa;" id="selected-info">Ei valintaa</div>
+    
+    <div class="slider-container" id="rotate-control" style="opacity: 0.5; pointer-events: none;">
+        <div class="slider-label"><span>Pyöritys (Rotation)</span><span id="rotate-val">0°</span></div>
+        <input type="range" id="rotate-slider" min="0" max="360" value="0" oninput="updateRotation(this.value)">
+    </div>
+
+    <div class="slider-container" id="size-control" style="opacity: 0.5; pointer-events: none;">
+        <div class="slider-label"><span>Koko (Size)</span><span id="size-val">100%</span></div>
+        <input type="range" id="size-slider" min="50" max="200" value="100" oninput="updateSize(this.value)">
+    </div>
+
+    <div class="prop-row" id="color-control" style="opacity: 0.5; pointer-events: none;">
+        <span style="font-size:12px; color:#aaa;">Väri (Col)</span>
+        <input type="color" id="color-picker" value="#ffffff" oninput="updateColor(this.value)">
+    </div>
+
+    <div class="prop-row">
+        <span style="font-size:12px; color:#aaa;">Kaari Y (Top)</span>
+        <input type="number" id="top-arch-val" value="0" step="10" onchange="createTopArch(this.value)">
+    </div>
+
+    <div class="slider-container">
+        <div class="slider-label"><span>Ohjainten näkyvyys</span><span id="opacity-val">100%</span></div>
+        <input type="range" id="opacity-slider" min="0" max="100" value="100" oninput="updateControlsOpacity(this.value)">
+    </div>
+
+    <div class="add-row">
+        <select id="comp-select">
+            <optgroup label="Perus">
+                <option value="bumper">Bumper (Pallo)</option>
+                <option value="bumper-rect">Bumper (Neliö)</option>
+                <option value="wall-rect">Seinä (Neliö)</option>
+                <option value="wall-circle">Seinä (Pallo)</option>
+                <option value="wall-tri">Kolmio (Aita)</option>
+            </optgroup>
+            <optgroup label="Erikois">
+                <option value="rails">Rails (Teleport)</option>
+                <option value="slingshot">Boost Slingshot (Kärki)</option>
+                <option value="drop-target">Drop Target</option>
+                <option value="wall-long">Pitkä Seinä</option>
+                <option value="wall-curve">Kaareva Seinä</option>
+                <option value="led">LED Paneeli</option>
+            </optgroup>
+        </select>
+        <button class="add-btn" onclick="addComponent()">ADD</button>
+    </div>
+    
+    <div style="margin-top:15px; color:#888; font-size:12px;">TEKSTUURIT</div>
+    <div class="io-row">
+        <button class="io-btn" onclick="document.getElementById('wall-tex-file').click()">WALL TXTR</button>
+        <button class="io-btn io-btn-small" onclick="removeWallTexture()">X</button>
+    </div>
+
+    <div class="slider-container">
+        <div class="slider-label"><span>Laukaisuvoima</span><span id="power-val">Max</span></div>
+        <input type="range" id="power-slider" min="10" max="100" value="100" oninput="updatePower(this.value)">
+    </div>
+
+    <div style="margin-top:15px; color:#888; font-size:12px;">TAUSTAKUVA</div>
+    <div class="io-row">
+        <button class="io-btn" onclick="document.getElementById('bg-file').click()">BG IMG</button>
+        <button class="io-btn" id="btn-bgmove" onclick="selectTool('bgmove')">BG MOVE</button>
+        <button class="io-btn" onclick="deleteBackground()">BG DEL</button>
+    </div>
+
+    <!-- Taustakuvan koon säätö (Minimi muutettu 1 prosenttiin) -->
+    <div class="slider-container">
+        <div class="slider-label"><span>Taustakuvan skaalaus</span><span id="bg-size-val">Cover</span></div>
+        <input type="range" id="bg-size-slider" min="1" max="300" value="100" oninput="updateBgScale(this.value)">
+    </div>
+
+    <!-- Taustakuvan fader -->
+    <div class="slider-container">
+        <div class="slider-label"><span>Yläreunan häivytys</span><span id="fade-val">0%</span></div>
+        <input type="range" id="fade-slider" min="0" max="100" value="0" oninput="updateBgFade(this.value)">
+    </div>
+
+    <!-- Taustamusiikin valinta (Pudotusvalikko vaihdettu tiedostonappiin) -->
+    <div style="margin-top:15px; color:#888; font-size:12px;">TAUSTAMUSIIKKI</div>
+    <div class="io-row">
+        <button class="io-btn" onclick="document.getElementById('music-file-input').click()">VALITSE MUSIIKKI (MP3)</button>
+    </div>
+    <div id="music-name-display" style="font-size: 10px; color: #0ff; margin-top: 5px; text-align: center;"></div>
+
+    <!-- Piilotettu tiedostosyöttö musiikille -->
+    <input type="file" id="music-file-input" style="display: none" accept="audio/*" onchange="handleMusicUpload(this)">
+
+    <!-- Audio-elementti (lisää bodyyn) -->
+    <audio id="bg-audio" loop></audio>
+
+    <div style="margin-top:15px; color:#888; font-size:12px;">TALLENNUS</div>
+    <div class="io-row">
+        <button class="io-btn" onclick="saveLevel()">SAVE</button>
+        <button class="io-btn" onclick="document.getElementById('file-input').click()">LOAD</button>
+    </div>
+    
+    <input type="file" id="bg-file" style="display: none" accept="image/*" onchange="loadBackground(this)">
+    <input type="file" id="wall-tex-file" style="display: none" accept="image/*" onchange="loadWallTexture(this)">
+    <input type="file" id="file-input" style="display: none" onchange="loadLevel(this)" accept=".json">
+</div>
+
+<div id="game-wrapper">
+        <!--  HÄIVYTYSELEMENTTI -->
+        <div id="bg-fade-overlay"></div> 
+        <div id="ui-layer"><div id="score">0</div></div>
+
+    <div id="touch-controls">
+        <div class="game-btn" id="btn-s" data-key="KeyS">S</div>
+        <div class="game-btn" id="btn-j" data-key="KeyJ">J</div>
+        <div class="game-btn" id="btn-l" data-key="KeyL">L</div>
+    </div>
+</div>
+
+<script>
+    const COLORS = {
+        bg: 'transparent', wall: '#222222', ball: '#ffffff', 
+        flipper: '#ffffff', bumper: '#00ffcc', lane: '#111111',
+        selected: '#ffff00', boost: 'rgba(0, 255, 204, 0.4)'
+    };
+    const GAME_WIDTH = 500;
+    const GAME_HEIGHT = 800;
+
+    const CAT_DEFAULT = 0x0001; 
+    const CAT_BALL = 0x0002;    
+    const CAT_FLIPPER = 0x0004; 
+
+    let engine, render, world;
+    let score = 0;
+    
+    // Tila: 'intro', 'playing', 'gameover'
+    let gameState = 'intro';
+
+    let currentBgScale = "cover";
+    let currentBgImageFile = ""; // Tallentaa taustakuvan tiedostonimen
+    let currentMusicFile = "";   // Tallentaa musiikin tiedostonimen
+
+    // Elämäjärjestelmän muuttujat
+    let lives = 4;
+    let nextExtraLifeScore = 2000;
+    let isGameOver = false;
+
+    let leftFlipper, rightFlipper, ball, plunger, plungerBase, plungerSpring;
+    let leftHinge, rightHinge; 
+    let bumpers = [];
+    let removableWalls = []; 
+    let archBodies = [];
+    let currentTopOffset = 0;
+    
+    let respawnQueue = [];
+    let particles = [];
+    let currentWallTexture = null;
+        let currentWallTexW = 0; // UUSI: Kuvan leveys
+        let currentWallTexH = 0; // UUSI: Kuvan korkeus
+
+    // RAILS / TELEPORT SYSTEM
+    let railTransport = {
+        active: false,
+        startPos: null,
+        endPos: null,
+        startTime: 0,
+        duration: 500 // ms
+    };
+
+    let isEditing = false;
+    let isDragging = false; 
+    let currentTool = 'move';
+    let selectedBody = null;
+    let groupOffsets = []; 
+
+    let keys = { KeyS: false, KeyJ: false, KeyL: false };
+    let scaleRatio = 1;
+    let cameraEnabled = true;
+
+    let bgPosX = 0, bgPosY = 0;
+    let lastDragX = 0, lastDragY = 0;
+
+    const hingeOffset = 45; 
+
+    function init() {
+        const { Engine, Render, Runner, Bodies, Composite, Constraint, Body, Events } = Matter;
+
+        engine = Engine.create({ positionIterations: 60, velocityIterations: 60 });
+        world = engine.world;
+        engine.gravity.y = 0.75; 
+
+        render = Render.create({
+            element: document.getElementById('game-wrapper'),
+            engine: engine,
+            options: {
+                width: GAME_WIDTH, height: GAME_HEIGHT,
+                wireframes: false, background: COLORS.bg,
+                pixelRatio: window.devicePixelRatio,
+                hasBounds: true 
+            }
+        });
+
+        function resizeCanvas() {
+            const winW = window.innerWidth;
+            const winH = window.innerHeight;
+            const targetAspect = GAME_WIDTH / GAME_HEIGHT;
+            const winAspect = winW / winH;
+            let finalW, finalH;
+            if (winAspect > targetAspect) { finalH = winH; finalW = winH * targetAspect; } 
+            else { finalW = winW; finalH = winW / targetAspect; }
+            render.canvas.style.width = `${finalW}px`;
+            render.canvas.style.height = `${finalH}px`;
+            scaleRatio = GAME_WIDTH / finalW; 
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        const wallOpts = { isStatic: true, render: { fillStyle: '#222' }, friction: 0, label: 'wall', restitution: 0.2 };
+        const staticWalls = [
+            Bodies.rectangle(10, -1600, 20, 4800, wallOpts), 
+            Bodies.rectangle(GAME_WIDTH-10, -1600, 20, 4800, wallOpts), 
+            Bodies.rectangle(GAME_WIDTH/2, -3000, GAME_WIDTH * 2, 50, wallOpts) 
+        ];
+
+        // Shooter Lane Wall
+        const shooterX = GAME_WIDTH - 60; 
+        staticWalls.push(Bodies.rectangle(shooterX, GAME_HEIGHT - 200, 10, 400, { ...wallOpts, render: { fillStyle: COLORS.lane } }));  
+        Composite.add(world, staticWalls);
+
+        createTopArch(0);
+
+        const baseFlipOpts = { render: { fillStyle: '#fff' }, density: 0.1, frictionAir: 0.01, label: 'flipper', collisionFilter: { category: CAT_FLIPPER, mask: CAT_BALL } };
+        leftFlipper = Bodies.rectangle(147, 714, 120, 20, { ...baseFlipOpts, chamfer: { radius: 9 } });
+        rightFlipper = Bodies.rectangle(330, 714, 120, 20, { ...baseFlipOpts, chamfer: { radius: 9 } });
+
+        leftHinge = Constraint.create({ pointA: { x: 147 - hingeOffset, y: 714 }, bodyB: leftFlipper, pointB: { x: -hingeOffset, y: 0 }, stiffness: 1, length: 0, render: { visible: false } });
+        rightHinge = Constraint.create({ pointA: { x: 330 + hingeOffset, y: 714 }, bodyB: rightFlipper, pointB: { x: hingeOffset, y: 0 }, stiffness: 1, length: 0, render: { visible: false } });
+
+        Composite.add(world, [leftFlipper, rightFlipper, leftHinge, rightHinge]);
+        Composite.add(world, [
+            Bodies.circle(147 - hingeOffset, 714+22, 12, { isStatic: true, render: {visible:false}, label: 'stopper' }),
+            Bodies.circle(330 + hingeOffset, 714+22, 12, { isStatic: true, render: {visible:false}, label: 'stopper' })
+        ]);
+
+        const pX = GAME_WIDTH - 25;
+        const pY = GAME_HEIGHT - 60;
+        plunger = Bodies.rectangle(pX, pY, 30, 20, { mass: 2000, friction: 0, label: 'plunger', render: { fillStyle: '#888' }, inertia: Infinity });
+        plungerBase = Bodies.rectangle(pX, pY + 120, 50, 10, { isStatic: true, isSensor: true, render: { visible: false } });
+        plungerSpring = Constraint.create({ bodyA: plunger, bodyB: plungerBase, stiffness: 1.0, damping: 0.0, length: 120, render: { visible: false, strokeStyle: '#333', lineWidth: 3 } });
+        Composite.add(world, [plunger, plungerBase, plungerSpring]);
+
+        // ALOITUSPALIKAT (Default)
+        addComponent('bumper', 250, 250);
+        addComponent('bumper', 170, 350);
+        addComponent('bumper', 330, 350);
+        addComponent('wall-tri', 120, 550); 
+        addComponent('wall-tri', 380, 550); 
+        addComponent('wall-tri', 60, GAME_HEIGHT - 90, 2.5, 0);
+        addComponent('wall-tri', shooterX - 40, GAME_HEIGHT - 90, 2.5, Math.PI);
+
+        updateLivesUI();
+        
+        Composite.add(world, Bodies.rectangle(GAME_WIDTH/2, GAME_HEIGHT + 50, GAME_WIDTH, 50, { isStatic: true, isSensor: true, label: 'floor' }));
+
+        render.canvas.addEventListener('mousedown', handleEditStart);
+        render.canvas.addEventListener('touchstart', handleEditStart, {passive: false});
+        render.canvas.addEventListener('mousemove', handleEditMove);
+        render.canvas.addEventListener('touchmove', handleEditMove, {passive: false});
+        window.addEventListener('mouseup', () => { isDragging = false; });
+        window.addEventListener('touchend', () => { isDragging = false; });
+
+        Events.on(engine, 'beforeUpdate', function() {
+            if(gameState !== 'playing') return; 
+
+            // 1. COOLDOWN-LOGIIKKA
+            // Vähennetään jäähyä joka frame, jos sitä on
+            if (ball && ball.railCooldown > 0) {
+                ball.railCooldown--;
+            }
+
+            // 2. RAILS TRANSPORT LOGIC
+            if (railTransport.active && ball) {
+                // Poistetaan fysiikat käytöstä kuljetuksen ajaksi
+                Body.setVelocity(ball, { x: 0, y: 0 });
+                Body.setAngularVelocity(ball, 0);
+                
+                const now = Date.now();
+                const progress = (now - railTransport.startTime) / railTransport.duration;
+
+                if (progress >= 1) {
+                    // Valmis: Siirrä pallo loppupisteeseen
+                    Body.setPosition(ball, railTransport.endPos);
+                    
+                    // Asetetaan jäähy (60 framea = n. 1 sekunti), jotta ei teleporttaa heti uudestaan
+                    ball.railCooldown = 60; 
+                    
+                    railTransport.active = false;
+                    // Fysiikat palautuvat automaattisesti, kun emme enää pakota nopeutta nollaan
+                } else {
+                    // Interpolointi (Liikutetaan palloa viivaa pitkin)
+                    const cx = railTransport.startPos.x + (railTransport.endPos.x - railTransport.startPos.x) * progress;
+                    const cy = railTransport.startPos.y + (railTransport.endPos.y - railTransport.startPos.y) * progress;
+                    Body.setPosition(ball, { x: cx, y: cy });
+                }
+                return; // Ohitetaan muu logiikka pallolle, kun se on raiteilla
+            }
+
+            // 3. NORMAALI PELILOGIIKKA
+            Body.setAngle(plunger, 0); Body.setPosition(plunger, { x: GAME_WIDTH - 25, y: plunger.position.y });
+            if (keys.KeyJ && !isEditing) if (plunger.position.y < GAME_HEIGHT - 10) Body.translate(plunger, { x: 0, y: 25 });
+            
+            // REUNATARKISTUS (OOB)
+            if (ball && !isEditing) {
+                const bPos = ball.position;
+                if (bPos.y > GAME_HEIGHT + 50 || bPos.x < -50 || bPos.x > GAME_WIDTH + 50) {
+                    lives--;
+                    updateLivesUI();
+                    Matter.Composite.remove(world, ball);
+                    ball = null;
+
+                    if (lives > 0) {
+                        spawnBall();
+                    } else {
+                        isGameOver = true;
+                        gameState = 'gameover';
+                        document.getElementById('game-over-overlay').style.display = 'flex';
+                    }
+                }
+            }
+
+            if (!isEditing && !isGameOver) {
+                const L_REST = 0.6, L_HIT = -0.2;
+                if (keys.KeyS) {
+                    if (leftFlipper.angle > L_HIT + 0.05) Body.setAngularVelocity(leftFlipper, -0.4);
+                    else { Body.setAngle(leftFlipper, L_HIT); Body.setAngularVelocity(leftFlipper, 0); }
+                } else {
+                    if (leftFlipper.angle < L_REST - 0.05) Body.setAngularVelocity(leftFlipper, 0.4);
+                    else { Body.setAngle(leftFlipper, L_REST); Body.setAngularVelocity(leftFlipper, 0); }
+                }
+                const R_REST = -0.6, R_HIT = 0.2;
+                if (keys.KeyL) {
+                    if (rightFlipper.angle < R_HIT - 0.05) Body.setAngularVelocity(rightFlipper, 0.4);
+                    else { Body.setAngle(rightFlipper, R_HIT); Body.setAngularVelocity(rightFlipper, 0); }
+                } else {
+                    if (rightFlipper.angle > R_REST + 0.05) Body.setAngularVelocity(rightFlipper, -0.4);
+                    else { Body.setAngle(rightFlipper, R_REST); Body.setAngularVelocity(rightFlipper, 0); }
+                }
+            }
+        });
+
+        Events.on(engine, 'collisionStart', function(event) {
+            if (gameState !== 'playing') return;
+            event.pairs.forEach(pair => {
+                const { bodyA, bodyB } = pair;
+                let scoreAdded = 0;
+
+                const check = (b, other) => {
+                    // Rails check
+                    if (b.label === 'rail' && b.customType === 'rail-entry' && other.label === 'ball') {
+                        // KORJAUS: Lisätty ehto && !railTransport.active
+                        // Tämä estää ajastimen nollaantumisen, jos pallo on jo liikkeessä.
+                        if (b.railTarget && (!other.railCooldown || other.railCooldown <= 0) && !railTransport.active) {
+                            startRailTransport(b, b.railTarget);
+                        }
+                    }
+
+                    if (b.label === 'bumper') { 
+                        scoreAdded += 100; 
+                        b.flashTimer = 8; 
+                        b.render.fillStyle = '#ffffff'; 
+                    }
+
+                    if (b.customType === 'led') { scoreAdded += 50; b.flashTimer = 15; b.render.fillStyle = '#00ffff'; }
+                    
+                    if (b.customType === 'drop-target') {
+                        scoreAdded += 500;
+                        createParticles(b.position.x, b.position.y, '#ffaa00');
+                        respawnQueue.push({
+                            type: 'drop-target', 
+                            x: b.position.x, y: b.position.y, 
+                            scale: b.customScale || 1
+                        });
+                        Matter.Composite.remove(world, b);
+                    }
+
+                    if (b.customType === 'slingshot' && other.label === 'ball') {
+                        if (b.parent && b.parent.parts) {
+                            b.parent.parts.forEach(part => {
+                                part.render.fillStyle = '#ffffff';
+                                part.flashTimer = 10;
+                            });
+                        } else {
+                            b.render.fillStyle = '#ffffff';
+                            b.flashTimer = 10;
+                        }
+
+                        const shootAngle = b.angle - Math.PI / 2;
+                        const speed = 18; 
+                        Body.setVelocity(other, { 
+                            x: Math.cos(shootAngle) * speed, 
+                            y: Math.sin(shootAngle) * speed 
+                        });
+                    }
+                };
+                check(bodyA, bodyB); check(bodyB, bodyA);
+                
+                if (scoreAdded > 0) {
+                    score += scoreAdded;
+                    document.getElementById('score').innerText = score;
+                    if (score >= nextExtraLifeScore) {
+                        lives++;
+                        nextExtraLifeScore += 2000;
+                        updateLivesUI();
+                    }
+                }
+            });
+        });
+
+        Events.on(render, 'beforeRender', function() {
+            // Jos ollaan editointitilassa, ei käytetä automaattikameraa, 
+            // mutta päivitetään tausta manuaalisen editoinnin mukaiseksi
+            if (isEditing) {
+                // Edit-tilassa käytetään pelkkää manuaalista sijaintia ja render.boundsia
+                const camOffsetEditing = render.bounds.min.y / scaleRatio;
+                document.getElementById('game-wrapper').style.backgroundPosition = 
+                    `calc(50% + ${bgPosX}px) calc(50% + ${bgPosY - camOffsetEditing}px)`;
+                return;
+            }
+
+            // Jos kamera on pois päältä tai palloa ei ole, nollataan näkymä
+            if (!cameraEnabled || !ball) { 
+                render.bounds.min.y = 0; 
+                render.bounds.max.y = GAME_HEIGHT;
+                
+                // Palautetaan tausta nolla-asentoon
+                document.getElementById('game-wrapper').style.backgroundPosition = 
+                    `calc(50% + ${bgPosX}px) calc(50% + ${bgPosY}px)`;
+                return; 
+            }
+
+            // 1. Laske kameran uusi Y-sijainti (fysiikkakoordinaateissa)
+            const targetY = ball.position.y > GAME_HEIGHT/2 ? GAME_HEIGHT/2 : ball.position.y;
+            render.bounds.min.y = targetY - GAME_HEIGHT/2; 
+            render.bounds.max.y = targetY + GAME_HEIGHT/2;
+
+            // 2. KORJAUS: Siirrä taustakuvaa vastakkaiseen suuntaan
+            // render.bounds.min.y kertoo kuinka syvällä "pöydällä" ollaan.
+            // Siirretään taustakuvaa ylöspäin saman verran, jotta se näyttää pysyvän paikallaan suhteessa seiniin.
+            // Jaetaan scaleRatiolla, jotta liike vastaa ruudun pikseleitä.
+            
+            const camOffset = render.bounds.min.y / scaleRatio;
+            
+            document.getElementById('game-wrapper').style.backgroundPosition = 
+                `calc(50% + ${bgPosX}px) calc(50% + ${bgPosY - camOffset}px)`;
+        });
+
+        Events.on(render, 'afterRender', function() {
+            const ctx = render.context;
+            const offX = render.bounds.min.x, offY = render.bounds.min.y;
+
+            // 1. RAILS DRAWING (Under the ball, but over walls)
+            const bodies = Matter.Composite.allBodies(world);
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = '#00ff00';
+            ctx.lineCap = 'round';
+            
+            bodies.forEach(b => {
+                // Etsitään rail-entry, jolla on kohde
+                if (b.label === 'rail' && b.customType === 'rail-entry' && b.railTarget) {
+                    // Tarkistetaan onko kohde vielä olemassa
+                    if (bodies.includes(b.railTarget)) {
+                        const startX = b.position.x - offX;
+                        const startY = b.position.y - offY;
+                        const endX = b.railTarget.position.x - offX;
+                        const endY = b.railTarget.position.y - offY;
+
+                        // Pääviiva
+                        ctx.beginPath();
+                        ctx.moveTo(startX, startY);
+                        ctx.lineTo(endX, endY);
+                        ctx.stroke();
+
+                        // Sivuviivat (offset)
+                        const dx = endX - startX;
+                        const dy = endY - startY;
+                        const len = Math.sqrt(dx*dx + dy*dy);
+                        if (len > 0) {
+                            const nx = -dy / len;
+                            const ny = dx / len;
+                            const offset = 12; // raideleveys
+
+                            ctx.beginPath();
+                            ctx.moveTo(startX + nx * offset, startY + ny * offset);
+                            ctx.lineTo(endX + nx * offset, endY + ny * offset);
+                            ctx.stroke();
+
+                            ctx.beginPath();
+                            ctx.moveTo(startX - nx * offset, startY - ny * offset);
+                            ctx.lineTo(endX - nx * offset, endY - ny * offset);
+                            ctx.stroke();
+                        }
+                    }
+                }
+            });
+
+            // 2. PARTIKKELIT
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.life--;
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += 0.5; 
+                ctx.fillStyle = p.color;
+                ctx.globalAlpha = p.life / 20;
+                ctx.beginPath();
+                ctx.rect(p.x - offX, p.y - offY, p.size, p.size);
+                ctx.fill();
+                ctx.globalAlpha = 1;
+                if (p.life <= 0) particles.splice(i, 1);
+            }
+
+            // 3. FLASH EFFECT (Välähdyksen palautus)
+            Matter.Composite.allBodies(world).forEach(parent => {
+                if (parent.parts) {
+                    parent.parts.forEach(b => {
+                        if (b.flashTimer > 0) {
+                            b.flashTimer--;
+                            if (b.flashTimer === 0) {
+                                if (b.originalColor) {
+                                    b.render.fillStyle = b.originalColor;
+                                } 
+                                else if (b.customType === 'led') {
+                                    b.render.fillStyle = '#000044';
+                                }
+                                else if (b.customType === 'slingshot' && !b.originalColor) {
+                                    b.render.fillStyle = COLORS.boost;
+                                }
+                                // KORJAUS: Palautetaan bumpperin väri
+                                else if (b.label === 'bumper') {
+                                    b.render.fillStyle = COLORS.bumper;
+                                }
+                            }
+                        }
+                    });
+                }
+            });
+
+            // 4. NEON PALLO (Piirretään manuaalisesti)
+            if (ball) {
+                const pos = ball.position;
+                const x = pos.x - offX;
+                const y = pos.y - offY;
+                const r = ball.circleRadius;
+
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = "#00ffcc";
+
+                const gradient = ctx.createRadialGradient(x - r*0.3, y - r*0.3, r * 0.1, x, y, r);
+                gradient.addColorStop(0, "#ffffff");
+                gradient.addColorStop(1, "#00ffcc");
+
+                ctx.fillStyle = gradient;
+                
+                ctx.beginPath();
+                ctx.arc(x, y, r, 0, 2 * Math.PI);
+                ctx.fill();
+
+                ctx.shadowBlur = 0;
+            }
+
+            // 5. JOUSI (PLUNGER)
+            if (plunger && plungerBase) {
+                const start = { x: plunger.position.x - offX, y: plunger.position.y - offY };
+                const end = { x: plungerBase.position.x - offX, y: plungerBase.position.y + 50 - offY };
+                const width = 20, coils = 12;
+                ctx.lineWidth = 3; ctx.strokeStyle = '#aaaaaa'; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+
+                ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(start.x, end.y + 20);
+                ctx.strokeStyle = '#444'; ctx.lineWidth = 8; ctx.stroke();
+
+                ctx.beginPath(); ctx.moveTo(start.x - width/2, start.y + 20);
+                const springLength = (end.y - start.y) - 40; const step = springLength / coils;
+                for (let i = 0; i <= coils; i++) {
+                    const x = (i % 2 === 0) ? start.x - width/2 : start.x + width/2;
+                    const y = (start.y + 20) + (i * step); ctx.lineTo(x, y);
+                }
+                ctx.shadowBlur = 5; ctx.shadowColor = '#0ff'; ctx.strokeStyle = '#ccc'; ctx.lineWidth = 3; ctx.stroke(); ctx.shadowBlur = 0;
+
+                const handleY = end.y - (120 - springLength) + 50;
+                ctx.fillStyle = '#aa0000'; ctx.beginPath(); ctx.arc(start.x, handleY, 15, 0, Math.PI * 2); ctx.fill();
+                ctx.lineWidth = 2; ctx.strokeStyle = '#ffcccc'; ctx.stroke();
+            }
+
+            if (isEditing && selectedBody) {
+                ctx.strokeStyle = COLORS.selected; ctx.lineWidth = 3; ctx.beginPath();
+                const bodies = selectedBody.groupId ? Matter.Composite.allBodies(world).filter(b => b.groupId === selectedBody.groupId) : [selectedBody];
+                bodies.forEach(b => {
+                    const v = b.vertices; ctx.moveTo(v[0].x - offX, v[0].y - offY);
+                    for(let j=1; j<v.length; j++) ctx.lineTo(v[j].x - offX, v[j].y - offY);
+                    ctx.lineTo(v[0].x - offX, v[0].y - offY);
+                });
+                ctx.stroke();
+            }
+        });
+
+        Runner.run(Runner.create(), engine); Render.run(render);
+        const defaultBg = new Image();
+        defaultBg.onload = () => document.getElementById('game-wrapper').style.backgroundImage = 'url(background.jpg)';
+        defaultBg.src = 'background.jpg';
+
+        populateLevelSelect();
+    }
+
+    // --- LEVEL SELECTION & INTRO ---
+
+    function populateLevelSelect() {
+        const select = document.getElementById('level-select');
+        if (typeof Level1 !== 'undefined') {
+            const opt = document.createElement('option'); opt.value = 'Level1'; opt.text = "Level 1"; select.add(opt);
+        }
+        if (typeof Level2 !== 'undefined') {
+            const opt = document.createElement('option'); opt.value = 'Level2'; opt.text = "Level 2"; select.add(opt);
+        }
+        if (typeof Level3 !== 'undefined') {
+            const opt = document.createElement('option'); opt.value = 'Level3'; opt.text = "Level 3"; select.add(opt);
+        }
+    }
+
+    function updateBgScale(val) {
+        // Jos 100%, käytetään "cover", muuten prosenttiarvoa
+        currentBgScale = val === "100" ? "cover" : val + "%";
+        document.getElementById('game-wrapper').style.backgroundSize = currentBgScale;
+        document.getElementById('bg-size-val').innerText = val === "100" ? "Cover" : val + "%";
+    }
+
+    function updateBgFade(val) {
+        currentBgFade = parseInt(val);
+        document.getElementById('bg-fade-overlay').style.height = currentBgFade + "%";
+        document.getElementById('fade-val').innerText = currentBgFade + "%";
+    }
+
+    // Musiikin lataus
+    function handleMusicUpload(input) {
+        const file = input.files[0];
+        if (file) {
+            currentMusicFile = file.name; // Tallennetaan nimi (esim. "music.mp3")
+            document.getElementById('music-name-display').innerText = "Valittu: " + file.name;
+            
+            const url = URL.createObjectURL(file);
+            const audio = document.getElementById('bg-audio');
+            audio.src = url;
+            if (gameState === 'playing') audio.play();
+        }
+    }
+
+    function updateMusic(val) {
+        currentMusicFile = val;
+        const audio = document.getElementById('bg-audio');
+        if (val) {
+            audio.src = val;
+            // Aloitetaan soitto vain jos peli on käynnissä
+            if (gameState === 'playing') audio.play();
+        } else {
+            audio.pause();
+            audio.src = "";
+        }
+    }
+
+    function startGame() {
+        const levelVal = document.getElementById('level-select').value;
+        
+        document.getElementById('intro-screen').style.display = 'none';
+
+        if (levelVal !== 'default') {
+            let levelData = null;
+            if (levelVal === 'Level1' && typeof Level1 !== 'undefined') levelData = Level1;
+            if (levelVal === 'Level2' && typeof Level2 !== 'undefined') levelData = Level2;
+            if (levelVal === 'Level3' && typeof Level3 !== 'undefined') levelData = Level3;
+            
+            if (levelData) {
+                loadLevelFromData(levelData);
+            }
+        }
+
+        score = 0;
+        document.getElementById('score').innerText = score;
+        lives = 4;
+        nextExtraLifeScore = 2000;
+        isGameOver = false;
+        gameState = 'playing';
+        updateLivesUI();
+        
+        Matter.Body.setPosition(plunger, { x: GAME_WIDTH - 25, y: GAME_HEIGHT - 60 });
+        Matter.Body.setVelocity(plunger, { x: 0, y: 0 });
+        Matter.Body.setAngularVelocity(plunger, 0);
+
+        spawnBall();
+
+        if (currentMusicFile) document.getElementById('bg-audio').play();
+    }
+
+    function endGame() {
+        // 1. Päivitetään pelin tila
+        isGameOver = true;
+        gameState = 'gameover';
+
+        // 2. Näytetään Game Over -ruutu (overlay)
+        const overlay = document.getElementById('game-over-overlay');
+        if (overlay) {
+            overlay.style.display = 'flex';
+        }
+
+        // 3. Pysäytetään taustamusiikki
+        const audio = document.getElementById('bg-audio');
+        if (audio) {
+            audio.pause();
+            // Nollataan musiikki alkamaan alusta seuraavalla kerralla
+            audio.currentTime = 0;
+        }
+
+        // 4. Poistetaan pallo fysiikkamaailmasta
+        if (ball) {
+            Matter.Composite.remove(world, ball);
+            ball = null;
+        }
+
+        console.log("Peli päättyi. Lopullinen pistemäärä: " + score);
+    }
+
+    function goToIntro() {
+        document.getElementById('game-over-overlay').style.display = 'none';
+        document.getElementById('intro-screen').style.display = 'flex';
+        gameState = 'intro';
+        if(ball) {
+            Matter.Composite.remove(world, ball);
+            ball = null;
+        }
+    }
+
+    function startRailTransport(start, end) {
+        railTransport.active = true;
+        railTransport.startPos = { x: start.position.x, y: start.position.y };
+        railTransport.endPos = { x: end.position.x, y: end.position.y };
+        railTransport.startTime = Date.now();
+        
+        // Lasketaan kesto etäisyyden perusteella, jotta nopeus on vakio
+        const dist = Matter.Vector.magnitude(Matter.Vector.sub(railTransport.endPos, railTransport.startPos));
+        const speed = 0.8; // pikseliä millisekunnissa
+        railTransport.duration = dist / speed;
+    }
+
+    function createParticles(x, y, color) {
+        for (let i = 0; i < 15; i++) {
+            particles.push({
+                x: x, y: y,
+                vx: (Math.random() - 0.5) * 10,
+                vy: (Math.random() - 0.5) * 10,
+                life: 30 + Math.random() * 20,
+                size: 3 + Math.random() * 4,
+                color: color
+            });
+        }
+    }
+
+    function updateLivesUI() {
+        const container = document.getElementById('lives-container');
+        container.innerHTML = '';
+        for (let i = 0; i < lives; i++) {
+            const ball = document.createElement('div');
+            ball.className = 'life-ball';
+            container.appendChild(ball);
+        }
+    }
+
+    function createTopArch(offset) {
+        currentTopOffset = parseFloat(offset);
+        if (archBodies.length > 0) Matter.Composite.remove(world, archBodies);
+        archBodies = [];
+        const centerY = 150 - currentTopOffset;
+        for (let i = 0; i < 30; i++) {
+            const angle = Math.PI + (i / 29) * Math.PI;
+            const b = Matter.Bodies.circle(GAME_WIDTH/2 + Math.cos(angle)*(GAME_WIDTH/2-20), centerY + Math.sin(angle)*150, 10, { isStatic: true, render: { fillStyle: '#222' } });
+            b.isTopArch = true; 
+            archBodies.push(b);
+        }
+        Matter.Composite.add(world, archBodies);
+        applyWallTextureToExisting();
+    }
+
+    function addComponent(providedType, x, y, scale = 1, angle = 0, color = null) {
+        const type = providedType || document.getElementById('comp-select').value;
+        const startX = x || GAME_WIDTH / 2;
+        // Jos ollaan edit-moodissa ja liikutettu kameraa, luodaan osa näkyvälle alueelle
+        const startY = y || render.bounds.min.y + 300;
+        let newObj;
+
+        // 1. KUTSUTAAN KOMPONENTTITEHDAS (Erikoisosat)
+        if (type === 'rails') {
+            newObj = PinballComponents.createRails(world, startX, startY, scale);
+        } else if (type === 'slingshot') {
+            newObj = PinballComponents.createSlingshot(world, startX, startY, scale);
+        } else if (['bumper-rect', 'drop-target', 'wall-long', 'wall-curve', 'led'].includes(type)) {
+            if (type === 'bumper-rect') newObj = PinballComponents.createBumper(world, startX, startY, 'bumper-rect', scale);
+            else if (type === 'drop-target') newObj = PinballComponents.createDropTarget(world, startX, startY, scale);
+            else if (type === 'wall-long') newObj = PinballComponents.createWall(world, startX, startY, 'wall-long', scale);
+            else if (type === 'wall-curve') newObj = PinballComponents.createWall(world, startX, startY, 'wall-curve', scale);
+            else if (type === 'led') newObj = PinballComponents.createLedPanel(world, startX, startY, scale);
+        } else {
+            // 2. PERUSMUODOT (Luodaan suoraan Matter.js:llä)
+            const common = { isStatic: true, render: { fillStyle: COLORS.wall }, label: 'wall', restitution: 0.2 };
+            if (type === 'bumper') {
+                newObj = Matter.Bodies.circle(startX, startY, 25 * scale, { 
+                    ...common, label: 'bumper', restitution: 1.5, render: { fillStyle: COLORS.bumper } 
+                });
+            } else if (type === 'wall-rect') {
+                newObj = Matter.Bodies.rectangle(startX, startY, 60 * scale, 20 * scale, common);
+            } else if (type === 'wall-circle') {
+                newObj = Matter.Bodies.circle(startX, startY, 15 * scale, common);
+            } else if (type === 'wall-tri') {
+                newObj = Matter.Bodies.fromVertices(startX, startY, [[{x:0,y:0},{x:40 * scale,y:20 * scale},{x:0,y:40 * scale}]], common);
+            }
+        }
+
+        if (newObj) {
+            const gid = Date.now() + Math.floor(Math.random() * 1000);
+            const arr = Array.isArray(newObj) ? newObj : [newObj];
+            
+            // Käsitellään jokainen osa (jos kyseessä on usean osan ryhmä kuten wall-curve tai led)
+            arr.forEach(o => { 
+                // Asetetaan tunnistetiedot tallennusta varten
+                if (!o.customType) o.customType = type; 
+                o.flashTimer = 0; 
+                o.groupId = gid;
+                o.customScale = scale;
+
+                // Asetetaan kulma (paitsi kaareville seinille, joilla on oma kulmalogiikka)
+                if (angle !== 0 && type !== 'wall-curve') {
+                    Matter.Body.setAngle(o, angle);
+                }
+
+                // VÄRIN ASETUS (jos määritetty, esim. LOAD-vaiheessa)
+                if (color && !['slingshot', 'rail-entry', 'rail-exit'].includes(o.customType)) {
+                    o.render.fillStyle = color;
+                    if (o.originalColor) o.originalColor = color; 
+                }
+
+                // SEINÄN TEKSTUROINTI 
+                const isWallType = o.label === 'wall' || ['wall-long', 'wall-rect', 'wall-curve'].includes(o.customType);
+                if (currentWallTexture && isWallType && currentWallTexW > 0) {
+                    o.render.sprite.texture = currentWallTexture;
+                    
+                    // Lasketaan skaalaus myös uusille osille
+                    const bWidth = o.bounds.max.x - o.bounds.min.x;
+                    const bHeight = o.bounds.max.y - o.bounds.min.y;
+                    
+                    o.render.sprite.xScale = bWidth / currentWallTexW;
+                    o.render.sprite.yScale = bHeight / currentWallTexH;
+                    
+                    o.render.fillStyle = 'transparent';
+                }
+
+                // Lisätään hallintalistoihin
+                if (o.label === 'bumper') {
+                    bumpers.push(o);
+                } else {
+                    removableWalls.push(o);
+                }
+            });
+
+            // Lisätään fysiikkamaailmaan (jos ei ole jo lisätty tehtaan sisällä)
+            if (!Array.isArray(newObj)) {
+                Matter.Composite.add(world, newObj);
+            }
+        }
+    }
+
+    function handleEditStart(e) {
+        if (!isEditing) return;
+        const pos = getGameCoordinates(e);
+        lastDragX = (e.targetTouches ? e.targetTouches[0].clientX : e.clientX);
+        lastDragY = (e.targetTouches ? e.targetTouches[0].clientY : e.clientY);
+        if (currentTool === 'camy' || currentTool === 'bgmove') { isDragging = true; return; }
+        const bodies = Matter.Query.point(Matter.Composite.allBodies(world), pos);
+        let found = bodies.find(b => !['floor', 'stopper', 'plunger', 'ball'].includes(b.label));
+        
+        if (found && found.parent && found.parent !== found) {
+             found = found.parent;
+        }
+
+        if (found) {
+            if (currentTool === 'delete') {
+                const targets = found.groupId ? Matter.Composite.allBodies(world).filter(b => b.groupId === found.groupId) : [found];
+                targets.forEach(t => Matter.Composite.remove(world, t)); selectedBody = null;
+            } else {
+                selectedBody = found; isDragging = true;
+                const targets = selectedBody.groupId ? Matter.Composite.allBodies(world).filter(b => b.groupId === selectedBody.groupId) : [selectedBody];
+                groupOffsets = targets.map(t => ({ id: t.id, dx: t.position.x - selectedBody.position.x, dy: t.position.y - selectedBody.position.y }));
+                
+                document.getElementById('selected-info').innerText = "Valittu: " + (selectedBody.customType || selectedBody.label);
+                document.getElementById('rotate-control').style.opacity = 1; document.getElementById('rotate-control').style.pointerEvents = 'auto';
+                document.getElementById('size-control').style.opacity = 1; document.getElementById('size-control').style.pointerEvents = 'auto';
+                document.getElementById('color-control').style.opacity = 1; document.getElementById('color-control').style.pointerEvents = 'auto';
+                
+                document.getElementById('rotate-slider').value = Math.round((selectedBody.angle * 180) / Math.PI);
+                document.getElementById('rotate-val').innerText = document.getElementById('rotate-slider').value + "°";
+                document.getElementById('size-slider').value = Math.round((selectedBody.customScale || 1.0) * 100);
+            }
+        } else { selectedBody = null; }
+    }
+
+    function handleEditMove(e) {
+        if (!isEditing || !isDragging) return;
+        const clientX = (e.targetTouches ? e.targetTouches[0].clientX : e.clientX);
+        const clientY = (e.targetTouches ? e.targetTouches[0].clientY : e.clientY);
+        
+        if (currentTool === 'camy') {
+            const dy = (clientY - lastDragY) * scaleRatio;
+            render.bounds.min.y -= dy; render.bounds.max.y -= dy;
+        } else if (currentTool === 'bgmove') {
+            bgPosX += (clientX - lastDragX); bgPosY += (clientY - lastDragY);
+            document.getElementById('game-wrapper').style.backgroundPosition = `calc(50% + ${bgPosX}px) calc(50% + ${bgPosY}px)`;
+        } else if (selectedBody && currentTool === 'move') {
+            const pos = getGameCoordinates(e);
+            const targets = selectedBody.groupId ? Matter.Composite.allBodies(world).filter(b => b.groupId === selectedBody.groupId) : [selectedBody];
+            
+            targets.forEach(t => {
+                const offset = groupOffsets.find(o => o.id === t.id);
+                if (offset) {
+                    const newX = pos.x + offset.dx;
+                    const newY = pos.y + offset.dy;
+                    
+                    const oldX = t.position.x;
+                    const oldY = t.position.y;
+
+                    Matter.Body.setPosition(t, { x: newX, y: newY });
+
+                    if (t.originX !== undefined && t.originY !== undefined) {
+                        t.originX += (newX - oldX);
+                        t.originY += (newY - oldY);
+                    }
+                }
+            });
+        }
+        lastDragX = clientX; lastDragY = clientY;
+    }
+
+    function updateRotation(val) {
+        if (!selectedBody) return;
+        const newAngle = (val * Math.PI) / 180;
+        const delta = newAngle - selectedBody.angle;
+        const targets = selectedBody.groupId ? Matter.Composite.allBodies(world).filter(b => b.groupId === selectedBody.groupId) : [selectedBody];
+        const pivot = selectedBody.position;
+        targets.forEach(t => {
+            if (targets.length > 1) Matter.Body.rotate(t, delta, pivot);
+            else Matter.Body.setAngle(t, newAngle);
+        });
+        document.getElementById('rotate-val').innerText = val + "°";
+    }
+
+    function updateSize(val) {
+        if (!selectedBody) return;
+        const factor = (val/100) / (selectedBody.customScale || 1.0);
+        const targets = selectedBody.groupId ? Matter.Composite.allBodies(world).filter(b => b.groupId === selectedBody.groupId) : [selectedBody];
+        targets.forEach(t => { Matter.Body.scale(t, factor, factor); t.customScale = val/100; });
+        document.getElementById('size-val').innerText = val + "%";
+    }
+
+    function updateColor(val) {
+        if (!selectedBody) return;
+        const targets = selectedBody.groupId ? Matter.Composite.allBodies(world).filter(b => b.groupId === selectedBody.groupId) : [selectedBody];
+        targets.forEach(t => {
+            if (t.parts && t.parts.length > 1) {
+                t.parts.forEach(p => p.render.fillStyle = val);
+            } else {
+                t.render.fillStyle = val;
+            }
+        });
+    }
+
+    function getGameCoordinates(evt) {
+        const rect = render.canvas.getBoundingClientRect();
+        const clientX = evt.targetTouches ? evt.targetTouches[0].clientX : evt.clientX;
+        const clientY = evt.targetTouches ? evt.targetTouches[0].clientY : evt.clientY;
+        return { x: (clientX - rect.left) * (GAME_WIDTH / rect.width), y: (clientY - rect.top) * (GAME_HEIGHT / rect.height) + render.bounds.min.y };
+    }
+
+    function toggleEditMode() {
+        isEditing = !isEditing;
+        const menu = document.getElementById('edit-menu'), btn = document.getElementById('edit-btn');
+        menu.style.display = isEditing ? 'block' : 'none';
+        btn.classList.toggle('active', isEditing); btn.innerText = isEditing ? 'PLAY (E)' : 'EDIT (E)';
+        if(!isEditing) {
+            ['rotate-control', 'size-control', 'color-control'].forEach(c => { 
+                document.getElementById(c).style.opacity = 0.5; document.getElementById(c).style.pointerEvents = 'none'; 
+            });
+        }
+    }
+
+    function selectTool(tool) {
+        currentTool = tool; document.querySelectorAll('.tool-btn, .io-btn').forEach(b => b.classList.remove('active'));
+        const el = document.getElementById('btn-' + tool); if (el) el.classList.add('active');
+    }
+
+    function spawnBall() {
+        if (ball) Matter.Composite.remove(world, ball);
+        // Neon-pallo: render: visible: false (piirretään itse afterRenderissä)
+        ball = Matter.Bodies.circle(475, 700, 12, { 
+            label: 'ball', 
+            restitution: 0.5, 
+            density: 0.04, 
+            frictionAir: 0.005, 
+            render: { visible: false }, 
+            collisionFilter: { category: CAT_BALL, mask: CAT_DEFAULT | CAT_FLIPPER } 
+        });
+        Matter.Composite.add(world, ball);
+    }
+
+    function applyPenalty() { score = Math.max(0, score - 500); document.getElementById('score').innerText = score; }
+    
+    function resetBall() { 
+        if(gameState !== 'playing') return;
+        applyPenalty(); 
+        spawnBall(); 
+    }
+
+    function updatePower(val) { plungerSpring.stiffness = 0.1 + (val/100)*0.9; document.getElementById('power-val').innerText = val + "%"; }
+    function updateControlsOpacity(val) { document.getElementById('touch-controls').style.opacity = val/100; document.getElementById('opacity-val').innerText = val + "%"; }
+    function toggleCamera() { cameraEnabled = !cameraEnabled; document.getElementById('btn-camera').innerText = "📷 AUTO-CAM: " + (cameraEnabled?"ON":"OFF"); }
+    function deleteBackground() { document.getElementById('game-wrapper').style.backgroundImage = 'none'; }
+
+    // Taustakuvan lataus
+    function loadBackground(input) {
+        const file = input.files[0];
+        if (file) {
+            currentBgImageFile = file.name; // Tallennetaan nimi (esim. "bg.jpg")
+            const r = new FileReader();
+            r.onload = e => document.getElementById('game-wrapper').style.backgroundImage = `url(${e.target.result})`;
+            r.readAsDataURL(file);
+        }
+    }
+
+
+    function loadWallTexture(input) {
+        if (input.files[0]) {
+            const r = new FileReader();
+            r.onload = e => {
+                // Luodaan väliaikainen kuva mittojen selvittämiseksi
+                const img = new Image();
+                img.src = e.target.result;
+                img.onload = () => {
+                    currentWallTexture = e.target.result;
+                    currentWallTexW = img.width;  // Tallennetaan leveys
+                    currentWallTexH = img.height; // Tallennetaan korkeus
+                    applyWallTextureToExisting();
+                };
+            };
+            r.readAsDataURL(input.files[0]);
+        }
+    }
+
+    function removeWallTexture() {
+        currentWallTexture = null;
+        const bodies = Matter.Composite.allBodies(world);
+        bodies.forEach(b => {
+            if (b.label === 'wall' || b.customType === 'wall-long' || b.customType === 'wall-rect') {
+                b.render.sprite.texture = null;
+            }
+        });
+    }
+
+    function applyWallTextureToExisting() {
+        if (!currentWallTexture || currentWallTexW === 0) return;
+        
+        const bodies = Matter.Composite.allBodies(world);
+        bodies.forEach(b => {
+            // Valitaan vain seinät, kaaret ja pitkät seinät
+            if (b.label === 'wall' || b.customType === 'wall-long' || b.customType === 'wall-curve' || b.isTopArch) {
+                
+                b.render.sprite.texture = currentWallTexture;
+                
+                // LASKETAAN SKAALAUS
+                // 1. Selvitetään objektin leveys ja korkeus (bounds)
+                const bWidth = b.bounds.max.x - b.bounds.min.x;
+                const bHeight = b.bounds.max.y - b.bounds.min.y;
+                
+                // 2. Asetetaan skaalaus: Objektin koko / Kuvan koko
+                // Matter.js piirtää spriten oletuksena alkuperäisessä koossa, 
+                // joten tämä pakottaa sen objektin mittoihin.
+                b.render.sprite.xScale = bWidth / currentWallTexW;
+                b.render.sprite.yScale = bHeight / currentWallTexH;
+
+                // Varmistetaan että väri ei peitä tekstuuria
+                b.render.fillStyle = 'transparent';
+            }
+        });
+    }
+
+    function saveLevel() {
+        const bodies = Matter.Composite.allBodies(world);
+        const processedGroups = new Set(); 
+        const processedIds = new Set(); // Estää duplikaatit raiteissa ja ryhmissä
+        const items = [];
+
+        bodies.forEach(b => {
+            // 1. Ohitetaan pelimoottorin perusobjektit ja jo käsitellyt
+            if (['flipper', 'plunger', 'stopper', 'floor', 'ball'].includes(b.label)) return;
+            if (b.isTopArch) return; // Yläkaari tallennetaan erikseen parametrina
+            
+            // Ohitetaan staattiset reunaseinät, joilla ei ole customTypea
+            if (b.label === 'wall' && !b.customType) return;
+            
+            // Jos tämä ID on jo hoidettu (esim. rails-pari), hypätään yli
+            if (processedIds.has(b.id)) return;
+            
+            // Jos kuuluu ryhmään, joka on jo tallennettu
+            if (b.groupId && processedGroups.has(b.groupId)) return;
+
+            // 2. RAILS (TELEPORT) - ERITYISKÄSITTELY
+            if (b.customType === 'rail-entry') {
+                // Tallennetaan vain, jos tällä on pari (exit)
+                if (b.railTarget) {
+                    // Tallennetaan LÄHTÖ
+                    items.push({
+                        x: b.position.x,
+                        y: b.position.y,
+                        ang: b.angle,
+                        col: null, 
+                        sc: b.customScale || 1,
+                        type: 'rails', 
+                        gid: null
+                    });
+                    
+                    // Tallennetaan MAALI heti perään (addComponent osaa lukea nämä pareina)
+                    items.push({
+                        x: b.railTarget.position.x,
+                        y: b.railTarget.position.y,
+                        ang: b.railTarget.angle,
+                        col: null,
+                        sc: b.railTarget.customScale || 1,
+                        type: 'rails', 
+                        gid: null
+                    });
+
+                    // Merkitään molemmat käsitellyiksi
+                    processedIds.add(b.id);
+                    processedIds.add(b.railTarget.id);
+                }
+                return; 
+            }
+
+            // Jos törmätään rail-exitiin irrallaan, se ohitetaan (käsiteltiin jo entryn yhteydessä)
+            if (b.customType === 'rail-exit') return;
+
+            // 3. NORMAALI TALLENNUS (Bumperit, seinät, ledit yms.)
+            let saveData = {
+                x: b.position.x,
+                y: b.position.y,
+                ang: b.angle,
+                col: b.render.fillStyle,
+                sc: b.customScale || 1,
+                type: b.customType || 'wall-rect',
+                gid: b.groupId
+            };
+
+            // Ryhmätietojen käsittely (esim. kaarevat seinät)
+            if (b.groupId) {
+                processedGroups.add(b.groupId);
+                
+                // Jos ryhmällä on määritetty alkuperäinen keskipiste (esim. kaareva seinä)
+                if (b.originX !== undefined && b.originY !== undefined) {
+                    saveData.x = b.originX;
+                    saveData.y = b.originY;
+                } 
+                else {
+                    // Lasketaan ryhmän keskipiste muiden jäsenten perusteella
+                    const groupBodies = bodies.filter(xb => xb.groupId === b.groupId);
+                    if (groupBodies.length > 0) {
+                        saveData.x = groupBodies.reduce((sum, item) => sum + item.position.x, 0) / groupBodies.length;
+                        saveData.y = groupBodies.reduce((sum, item) => sum + item.position.y, 0) / groupBodies.length;
+                    }
+                }
+            }
+
+            items.push(saveData);
+        });
+
+        // Kootaan lopullinen JSON-rakenne
+        const data = {
+            topArch: currentTopOffset,
+            bgScale: currentBgScale,
+            bgImage: currentBgImageFile, // Tallentaa kuvan nimen
+            music: currentMusicFile,      // Tallentaa musiikin nimen
+            bgX: bgPosX,                  // UUSI: Tallentaa taustan X-sijainnin
+            bgY: bgPosY,                  // UUSI: Tallentaa taustan Y-sijainnin
+            bgFade: currentBgFade,
+            items: items
+        };
+        
+        // Luodaan tiedosto ja ladataan se
+        const dataStr = JSON.stringify(data, null, 2); 
+        const blob = new Blob([dataStr], {type: 'application/json'});
+        const a = document.createElement('a'); 
+        
+        const fileName = 'pinball_level.json';
+        
+        a.href = URL.createObjectURL(blob);
+        a.download = fileName; 
+        a.click();
+        
+        URL.revokeObjectURL(a.href);
+    }
+
+
+
+    function clearLevel() {
+        bumpers.forEach(b => Matter.Composite.remove(world, b));
+        removableWalls.forEach(w => Matter.Composite.remove(world, w));
+        if (archBodies.length > 0) Matter.Composite.remove(world, archBodies);
+        
+        const allBodies = Matter.Composite.allBodies(world);
+        allBodies.forEach(b => {
+            if (b.customType || (b.groupId && !['flipper', 'plunger', 'stopper', 'floor', 'wall'].includes(b.label))) {
+                Matter.Composite.remove(world, b);
+            }
+        });
+        
+        // Resetoidaan Rails-logiikka
+        PinballComponents.pendingRailEntry = null;
+
+        bumpers = [];
+        removableWalls = [];
+        archBodies = [];
+        particles = [];
+        respawnQueue = [];
+    }
+
+    // Lataa tiedostosta (file input)
+    function loadLevel(input) {
+        const file = input.files[0]; if (!file) return;
+        const reader = new FileReader();
+        reader.onload = e => {
+            const data = JSON.parse(e.target.result);
+            loadLevelFromData(data);
+        }; 
+        reader.readAsText(file);
+    }
+
+    // Lataa JSON-datasta
+    function loadLevelFromData(data) {
+        clearLevel();
+        createTopArch(data.topArch || 0);
+        
+        // 1. Lataa taustakuva
+        if (data.bgImage) {
+            currentBgImageFile = data.bgImage;
+            document.getElementById('game-wrapper').style.backgroundImage = `url('${data.bgImage}')`;
+        }
+
+        // 2. Lataa musiikki
+        if (data.music) {
+            currentMusicFile = data.music;
+            const audio = document.getElementById('bg-audio');
+            audio.src = data.music; 
+            document.getElementById('music-name-display').innerText = "Musiikki: " + data.music;
+        }
+
+        // 3. Lataa taustakuvan sijainti ja aseta se heti
+        bgPosX = data.bgX || 0;
+        bgPosY = data.bgY || 0;
+        document.getElementById('game-wrapper').style.backgroundPosition = 
+            `calc(50% + ${bgPosX}px) calc(50% + ${bgPosY}px)`;
+
+        // Häivytyksen lataus
+        currentBgFade = data.bgFade || 0;
+        document.getElementById('bg-fade-overlay').style.height = currentBgFade + "%";
+        document.getElementById('fade-slider').value = currentBgFade;
+        document.getElementById('fade-val').innerText = currentBgFade + "%";
+
+        // 4. Lataa skaalaus
+        if (data.bgScale) {
+            currentBgScale = data.bgScale;
+            document.getElementById('game-wrapper').style.backgroundSize = currentBgScale;
+            const scaleVal = currentBgScale === "cover" ? 100 : parseInt(currentBgScale);
+            document.getElementById('bg-size-slider').value = scaleVal;
+            document.getElementById('bg-size-val').innerText = currentBgScale;
+        }
+
+        // 5. Luo objektit
+        if (data.items) {
+            data.items.forEach(item => { 
+                addComponent(item.type, item.x, item.y, item.sc, item.ang, item.col); 
+            });
+        }
+    }
+
+    window.addEventListener('keydown', e => { 
+        if (gameState === 'intro') {
+            if (e.code === 'Space' || e.code === 'KeyJ') {
+                startGame();
+            }
+            return; 
+        }
+
+        if (gameState === 'gameover') {
+            if (e.code === 'Space' || e.code === 'KeyJ') {
+                goToIntro();
+            }
+            return;
+        }
+
+        if(e.code === 'KeyR') resetBall();
+        if(e.code === 'KeyE') toggleEditMode();
+        if(keys.hasOwnProperty(e.code)) keys[e.code] = true; updateBtn(e.code, true); 
+    });
+    window.addEventListener('keyup', e => { if(keys.hasOwnProperty(e.code)) keys[e.code] = false; updateBtn(e.code, false); });
+    
+    function updateBtn(code, active) {
+        const mapping = {KeyS:'btn-s', KeyJ:'btn-j', KeyL:'btn-l'};
+        const el = document.getElementById(mapping[code]);
+        if(el) active ? el.classList.add('pressed') : el.classList.remove('pressed');
+    }
+
+    init();
+</script>
+</body>
+</html>
