@@ -110,7 +110,7 @@ const PinballComponents = {
         return compoundBody;
     },
 
-    // 4. Seinät (Suora ja Kaareva)
+    // Seinät (Suora ja Kaareva)
     createWall: function(world, x, y, type, scale = 1) {
         const { Bodies, Composite, Body } = Matter;
         const common = { isStatic: true, render: { fillStyle: '#333' }, label: 'wall', restitution: 0.2 };
@@ -150,27 +150,7 @@ const PinballComponents = {
         }
     },
 
-    // 5. LED Paneeli
-    createLedPanel: function(world, x, y, scale = 1) {
-        const { Bodies, Composite, Body } = Matter;
-        const groupId = Date.now() + Math.random();
-        const leds = [];
-        for(let i=0; i<4; i++) {
-            const led = Bodies.circle(x - (60 * scale) + (i * 40 * scale), y, 10 * scale, { 
-                isStatic: true, 
-                isSensor: true, 
-                label: 'led', 
-                groupId: groupId, 
-                render: { fillStyle: '#000044' } 
-            });
-            led.customType = 'led';
-            leds.push(led);
-        }
-        Composite.add(world, leds);
-        return leds;
-    },
-
-    // 6. Rails (Teleport)
+    // Rails (Teleport)
     createRails: function(world, x, y, scale = 1) {
         const { Bodies, Composite, Body } = Matter;
         
@@ -205,5 +185,143 @@ const PinballComponents = {
         
         Composite.add(world, b);
         return b;
+    },
+
+    // 7. Mover (Liikkuva este)
+    createMover: function(world, x, y, scale = 1, extra = null) {
+        const { Bodies, Composite, Body } = Matter;
+        const b = Bodies.rectangle(x, y, 60 * scale, 20 * scale, { 
+            isStatic: true, 
+            label: 'mover', 
+            render: { fillStyle: '#8B4513' }, 
+            friction: 0,
+            restitution: 1.0 
+        });
+        
+        // Jos ladataan tallennuksesta (extra), käytetään niitä arvoja.
+        // Muuten alustetaan nykyiseen sijaintiin.
+        b.startX = (extra && extra.startX !== undefined) ? extra.startX : x;
+        b.startY = (extra && extra.startY !== undefined) ? extra.startY : y;
+        b.endX = (extra && extra.endX !== undefined) ? extra.endX : x;
+        b.endY = (extra && extra.endY !== undefined) ? extra.endY : y;
+        b.moveSpeed = 0.02;
+        
+        b.customType = 'mover';
+        b.customScale = scale;
+        
+        Composite.add(world, b);
+        return b;
+    },
+
+    // MultiBall 
+    createMultiBall: function(world, x, y, reqScore = 1000, scale = 1) {
+        const { Bodies, Composite, Body } = Matter;
+        const b = Bodies.circle(x, y, 30 * scale, { 
+            isStatic: true, 
+            label: 'multiball', 
+            render: { fillStyle: '#ff00ff' } 
+        });
+        
+        b.customType = 'multiball';
+        b.customScale = scale;
+        b.reqScore = parseInt(reqScore); 
+        b.isActive = false; 
+        b.isTriggered = false; 
+        
+        Composite.add(world, b);
+        return b;
+    },
+
+    // LED Paneeli 
+    createLedPanel: function(world, x, y, scale = 1, angle = 0) {
+        const { Bodies, Composite, Body, Vector } = Matter;
+        const groupId = Date.now() + Math.random();
+        const leds = [];
+        
+        // Luodaan 4 LEDiä
+        for(let i=0; i<4; i++) {
+            // Lasketaan sijainti rivissä (keskitetty x:n ympärille)
+            // x - 60 + i*40 (kun scale=1)
+            const offsetX = (-60 + (i * 40)) * scale;
+            
+            // Jos kulma on 0, tämä on yksinkertaista.
+            // Jos kulma on jotain muuta, meidän pitää pyörittää offset-vektoria.
+            const rotatedPoint = Vector.rotate({ x: offsetX, y: 0 }, angle);
+
+            const led = Bodies.circle(x + rotatedPoint.x, y + rotatedPoint.y, 10 * scale, { 
+                isStatic: true, 
+                isSensor: true, 
+                label: 'led', 
+                groupId: groupId, 
+                angle: angle, // Tallennetaan kulma myös bodyyn
+                render: { fillStyle: '#000044' } 
+            });
+            led.customType = 'led';
+            leds.push(led);
+        }
+        Composite.add(world, leds);
+        return leds;
+    },
+
+    // 8. Switch (Kytkin) - Osa 1/2
+    createSwitch: function(world, x, y, scale = 1) {
+        const { Bodies, Composite, Body } = Matter;
+        const b = Bodies.circle(x, y, 15 * scale, { 
+            isStatic: true, 
+            isSensor: true, // Pallo menee yli, ei törmää
+            label: 'switch', 
+            render: { fillStyle: '#ff0000' } // Punainen
+        });
+        b.customType = 'switch';
+        b.customScale = scale;
+        // Tähän tallennetaan linkitetyn portin ID myöhemmin
+        b.targetGateId = null; 
+        
+        Composite.add(world, b);
+        return b;
+    },
+
+    // 9. Gate (Portti) - Osa 2/2
+    createGate: function(world, x, y, scale = 1) {
+        const { Bodies, Composite, Body } = Matter;
+        const b = Bodies.rectangle(x, y, 20 * scale, 80 * scale, { 
+            isStatic: true, 
+            label: 'gate', 
+            render: { fillStyle: '#8B4513' } // Ruskea
+        });
+        b.customType = 'gate';
+        b.customScale = scale;
+        b.isOpen = false;
+        
+        Composite.add(world, b);
+        return b;
+    },
+
+    // 10. Paddle (Pelaajan ohjaama maila)
+    createPaddle: function(world, x, y, scale = 1) {
+        const { Bodies, Composite, Body } = Matter;
+        // Ohut, pyöristetty valkoinen suorakulmio
+        const b = Bodies.rectangle(x, y, 80 * scale, 15 * scale, { 
+            label: 'paddle',
+            isStatic: false, // Liikkuu fysiikan/voiman avulla
+            render: { fillStyle: '#ffffff' },
+            chamfer: { radius: 7 * scale }, // Pyöristetyt reunat
+            density: 0.5, // Raskas, jotta pallo ei tönäise sitä helposti pois
+            restitution: 1.2, // Pallo kimpoaa kovaa
+            frictionAir: 0.1 // Pysähtyy nopeasti kun nappi päästetään
+        });
+        
+        // Lukitaan rotaatio (inertia Infinity)
+        Body.setInertia(b, Infinity);
+        
+        b.customType = 'paddle';
+        b.customScale = scale;
+        
+        // Tallennetaan Y-koordinaatti, jotta voimme pakottaa sen pysymään linjassa
+        b.fixedY = y;
+        
+        Composite.add(world, b);
+        return b;
     }
+    
 };
