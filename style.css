@@ -1,0 +1,342 @@
+body {
+            margin: 0; padding: 0;
+            background-color: #000; /* Pelkkä musta tausta selaimelle */
+            overflow: hidden;
+            font-family: 'Courier New', Courier, monospace;
+            touch-action: none;
+            user-select: none;
+            color: #eee;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        #edit-btn {
+            position: absolute; top: 15px; left: 15px;
+            background: rgba(0,0,0,0.5); border: 1px solid #0ff; color: #0ff;
+            padding: 8px 12px; cursor: pointer; z-index: 100;
+            font-family: inherit; font-weight: bold; text-transform: uppercase;
+        }
+        #edit-btn.active { background: #0ff; color: #000; }
+
+        #reset-btn {
+            position: absolute; top: 15px; left: 120px;
+            background: rgba(0,0,0,0.5); border: 1px solid #ff4444; color: #ff4444;
+            padding: 8px 12px; cursor: pointer; z-index: 100;
+            font-family: inherit; font-weight: bold; text-transform: uppercase;
+        }
+        #reset-btn:active { background: #ff4444; color: #000; }
+
+        #edit-menu {
+            display: none;
+            position: absolute; top: 55px; left: 15px;
+            background: rgba(0, 0, 0, 0.95);
+            border: 1px solid #444; padding: 15px;
+            z-index: 101; width: 220px;
+            box-shadow: 5px 5px 15px rgba(0,0,0,0.8);
+            max-height: 80vh; overflow-y: auto;
+        }
+
+        #game-wrapper {
+            position: relative;
+            /* Poistetaan 100% pakotukset, koko hoidetaan JS:llä resizeCanvasissa */
+            display: flex; justify-content: center; align-items: center;
+            /* transform: translateY(-50px);  <-- Poista tämä jos se häiritsee asettelua nyt */
+            
+            background-size: 100% 100%; /* Täyttää wrapperin, ei ikkunaa */
+            background-position: center;
+            background-repeat: no-repeat;
+            
+            border-left: 1px solid #111;
+            border-right: 1px solid #111;
+        }
+
+        #bg-fade-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 0%; /* Tätä säädetään JS:llä */
+            background: linear-gradient(to bottom, #000 0%, transparent 100%);
+            z-index: 1; /* Taustakuvan päällä, pelin alla */
+            pointer-events: none; /* Pallo ei törmää tähän */
+        }
+        /* Varmistetaan, että canvas on varmasti tämän päällä */
+        canvas {
+            position: relative;  
+            z-index: 5;   
+            box-shadow: 0 0 40px rgba(0, 255, 204, 0.2);
+            border: 2px solid #333;
+            border-radius: 4px;
+            background: transparent !important; 
+            display: block;
+            margin: auto; 
+        }
+
+        #ui-layer {
+            position: absolute; top: 15%; left: 50%;
+            transform: translateX(-50%);
+            color: #0ff; text-shadow: 0 0 10px #0ff;
+            pointer-events: none; z-index: 10;
+        }
+        #score { font-size: 8vh; font-weight: bold; margin: 0; }
+
+        #lives-container {
+            position: absolute; top: 15px; right: 15px;
+            width: 120px; 
+            display: flex; flex-wrap: wrap; 
+            justify-content: flex-end; gap: 5px;
+            z-index: 20; pointer-events: none;
+        }
+        .life-ball {
+            width: 12px; height: 12px;
+            border-radius: 50%;
+            background: #fff;
+            box-shadow: 0 0 5px #0ff;
+            border: 1px solid #333;
+        }
+
+        /* --- INTRO SCREEN --- */
+        #intro-screen {
+            display: flex;
+            position: absolute; top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(5, 5, 5, 0.95);
+            z-index: 300;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+        
+        #intro-screen h1 {
+            font-size: 8vh; margin: 0 0 20px 0;
+            color: #fff;
+            text-shadow: 0 0 10px #0ff, 0 0 20px #0ff, 0 0 40px #00ffff;
+            letter-spacing: 5px;
+        }
+
+        .intro-ball {
+            width: 50px; height: 50px;
+            background: radial-gradient(circle at 30% 30%, #fff, #00ffcc);
+            border-radius: 50%;
+            box-shadow: 0 0 20px #00ffcc;
+            margin-bottom: 40px;
+            animation: bounce 2s infinite ease-in-out;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-20px); }
+        }
+
+        #level-list-container {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            margin-bottom: 20px;
+            width: 260px; /* Hieman leveämpi scrollbarin takia */
+            
+            /* SCROLLAUS-ASETUKSET */
+            max-height: 200px;      /* Jos lista on tätä korkeampi, scrollbar ilmestyy */
+            overflow-y: auto;       /* Sallii pystyskrollauksen */
+            overflow-x: hidden;     /* Estää sivuttaisskrollauksen */
+            
+            /* Ulkonäkö */
+            padding: 5px;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid #333;
+            border-radius: 4px;
+        }
+
+        /* --- KUSTOMOITU SCROLLBAR (Neon-tyyli) --- */
+        
+        /* Itse palkin leveys */
+        #level-list-container::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        /* Palkin tausta (ura) */
+        #level-list-container::-webkit-scrollbar-track {
+            background: #111;
+            border-radius: 4px;
+        }
+
+        /* Liikkuva osa (peukalo) */
+        #level-list-container::-webkit-scrollbar-thumb {
+            background: #008888; /* Tummempi syaani */
+            border-radius: 4px;
+            border: 1px solid #00aaaa;
+        }
+
+        /* Liikkuva osa kun hiiri on päällä */
+        #level-list-container::-webkit-scrollbar-thumb:hover {
+            background: #00ffff; /* Kirkas syaani */
+        }
+
+        /* NAPPIEN TYYLIT */
+        .level-btn {
+            padding: 10px;
+            border: 1px solid #0ff;
+            color: #0ff;
+            background: rgba(0, 0, 0, 0.5);
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            box-shadow: 0 0 5px rgba(0, 255, 255, 0.1);
+            flex-shrink: 0; /* Estää nappeja litistymästä kasaan */
+        }
+
+        .level-btn {
+            padding: 10px;
+            border: 1px solid #0ff;
+            color: #0ff;
+            background: rgba(0, 0, 0, 0.5);
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            box-shadow: 0 0 5px rgba(0, 255, 255, 0.1);
+        }
+
+        .level-btn:hover {
+            background: rgba(0, 255, 255, 0.1);
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.3);
+        }
+
+        /* VALITUN TASON TYYLI (Maalattu tausta) */
+        .level-btn.active {
+            background: #0ff;       /* Syaani tausta */
+            color: #000;            /* Musta teksti */
+            font-weight: bold;
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.8);
+            border-color: #fff;
+            transform: scale(1.02); /* Hieman isompi */
+        }
+
+
+
+
+        /* TYYLIT VOLUUMISÄÄTIMELLE */
+        #volume-control {
+            position: absolute;
+            top: 60px; left: 15px; /* Edit-napin alla */
+            z-index: 100;
+            display: flex; align-items: center; gap: 5px;
+            background: rgba(0,0,0,0.6);
+            border: 1px solid #0ff;
+            padding: 5px 10px;
+            border-radius: 4px;
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.2);
+        }
+        #volume-control label {
+            font-size: 12px; color: #0ff; font-weight: bold;
+        }
+        #volume-control input[type=range] {
+            width: 80px; height: 4px;
+            appearance: none; background: #333; outline: none; margin: 0;
+        }
+        #volume-control input[type=range]::-webkit-slider-thumb {
+            appearance: none; width: 12px; height: 12px;
+            background: #0ff; border-radius: 50%; cursor: pointer;
+            box-shadow: 0 0 5px #0ff;
+        }
+
+
+        #start-game-btn {
+            padding: 15px 40px;
+            font-size: 24px;
+            background: #004433;
+            color: #fff;
+            border: 2px solid #0ff;
+            cursor: pointer;
+            font-family: inherit;
+            font-weight: bold;
+            text-transform: uppercase;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.4);
+            transition: all 0.2s;
+        }
+        #start-game-btn:hover { background: #006644; transform: scale(1.05); }
+
+        .key-hint {
+            margin-top: 20px; font-size: 12px; color: #888;
+        }
+
+        /* --- GAME OVER --- */
+        #game-over-overlay {
+            display: none;
+            position: absolute; top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 200;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: #ff4444;
+            text-shadow: 0 0 20px #ff0000;
+            cursor: pointer;
+        }
+        #game-over-overlay h1 { font-size: 60px; margin: 0 0 20px 0; }
+        #game-over-overlay p { font-size: 24px; color: #fff; animation: blink 1.5s infinite; }
+
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
+
+        .tool-btn {
+            display: block; width: 100%; margin-bottom: 8px;
+            padding: 10px; background: #111; border: 1px solid #555;
+            color: #fff; text-align: left; cursor: pointer;
+        }
+        .tool-btn.active { background: #004433; border-color: #0ff; }
+        .tool-btn.danger { border-color: #ff4444; color: #ffcccc; }
+        .tool-btn.danger.active { background: #440000; border-color: #ff0000; }
+        
+        .slider-container { margin-top: 10px; margin-bottom: 10px; border-top: 1px solid #333; padding-top: 10px; }
+        .slider-label { font-size: 11px; color: #aaa; display: flex; justify-content: space-between; }
+        input[type=range] { width: 100%; margin-top: 5px; accent-color: #0ff; }
+        input[type=number] { width: 60px; background: #222; color: #fff; border: 1px solid #555; }
+
+        .add-row {
+            display: flex; gap: 5px; margin-top: 15px; border-top: 1px solid #333; padding-top: 10px;
+        }
+        select {
+            flex: 2; background: #222; color: #fff; border: 1px solid #555; padding: 5px; font-size: 12px;
+        }
+        .add-btn {
+            flex: 1; background: #004433; border: 1px solid #0ff; color: #fff; cursor: pointer; font-weight: bold;
+        }
+
+        .io-row { display: flex; gap: 5px; margin-top: 10px; border-top: 1px solid #333; padding-top: 10px; }
+        .io-btn { flex: 1; padding: 8px; background: #333; border: none; color: white; cursor: pointer; font-size: 10px; text-align: center; }
+        .io-btn.active { background: #004433; border: 1px solid #0ff; }
+        .io-btn-small { flex: 0.3; background: #500; }
+
+        #touch-controls {
+            position: absolute; bottom: 80px;
+            left: 0; width: 100%;
+            display: flex; 
+            justify-content: space-between; 
+            padding: 0 40px; 
+            box-sizing: border-box;
+            z-index: 50; pointer-events: none;
+            opacity: 1; 
+        }
+        /* Läpinäkyvät ohjausnapit */
+        .game-btn {
+            pointer-events: auto; width: 80px; height: 80px;
+            border-radius: 50%;
+            /* Muutettu läpinäkyväksi */
+            background: transparent;
+            border: none;
+            /* Poistettu teksti näkyvistä tarvittaessa, tai pidetään debuggausta varten himmeänä */
+            color: transparent; 
+            
+            display: flex; justify-content: center; align-items: center;
+            touch-action: manipulation;
+        }
+
+        .game-btn:active, .game-btn.pressed {
+            background: transparent; border: none; transform: none;
+        }
