@@ -7,11 +7,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
     <script src="components.js"></script>
     
-    <!-- Level files (valinnaiset) -->
-    <script src="level1.js" onerror="console.log('Level 1 not found')"></script>
-    <script src="level2.js" onerror="console.log('Level 2 not found')"></script>
-    <script src="level3.js" onerror="console.log('Level 3 not found')"></script>
-
     <style>
         body {
             margin: 0; padding: 0;
@@ -56,14 +51,14 @@
 
         #game-wrapper {
             position: relative;
-            width: 100%; height: 100%;
+            /* Poistetaan 100% pakotukset, koko hoidetaan JS:llä resizeCanvasissa */
             display: flex; justify-content: center; align-items: center;
-            transform: translateY(-50px);
-            /* Taustakuva siirretty tänne, jotta se rajaantuu pelialueelle */
-            background-size: cover;
+            /* transform: translateY(-50px);  <-- Poista tämä jos se häiritsee asettelua nyt */
+            
+            background-size: 100% 100%; /* Täyttää wrapperin, ei ikkunaa */
             background-position: center;
             background-repeat: no-repeat;
-            background-attachment: scroll; 
+            
             border-left: 1px solid #111;
             border-right: 1px solid #111;
         }
@@ -158,6 +153,32 @@
             cursor: pointer;
             box-shadow: 0 0 10px rgba(0, 255, 255, 0.2);
         }
+
+        /* TYYLIT VOLUUMISÄÄTIMELLE */
+        #volume-control {
+            position: absolute;
+            top: 60px; left: 15px; /* Edit-napin alla */
+            z-index: 100;
+            display: flex; align-items: center; gap: 5px;
+            background: rgba(0,0,0,0.6);
+            border: 1px solid #0ff;
+            padding: 5px 10px;
+            border-radius: 4px;
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.2);
+        }
+        #volume-control label {
+            font-size: 12px; color: #0ff; font-weight: bold;
+        }
+        #volume-control input[type=range] {
+            width: 80px; height: 4px;
+            appearance: none; background: #333; outline: none; margin: 0;
+        }
+        #volume-control input[type=range]::-webkit-slider-thumb {
+            appearance: none; width: 12px; height: 12px;
+            background: #0ff; border-radius: 50%; cursor: pointer;
+            box-shadow: 0 0 5px #0ff;
+        }
+
 
         #start-game-btn {
             padding: 15px 40px;
@@ -256,6 +277,12 @@
 <body>
 
 <button id="edit-btn" onclick="toggleEditMode()">EDIT (E)</button>
+
+<div id="volume-control">
+    <label>VOL</label>
+    <input type="range" id="global-volume" min="0" max="100" value="50" oninput="updateVolume(this.value)">
+</div>
+
 <button id="reset-btn" onclick="resetBall()">RESET (R)</button>
 
 <div id="lives-container"></div>
@@ -267,9 +294,11 @@
     <button id="start-game-btn" onclick="startGame()">START GAME</button>
     <div class="key-hint">[ SPACE ] or [ J ] to Select</div>
     <select id="level-select">
-        <option value="default">Default Table</option>
-        
-    </select>    
+    <option value="default">Default Table</option>
+    <option value="level1.json">Level 1</option>
+    <option value="level2.json">Level 2</option>
+    <option value="level3.json">Level 3</option>
+</select>  
 
 </div>
 
@@ -372,6 +401,10 @@
     </div>
     <div id="music-name-display" style="font-size: 10px; color: #0ff; margin-top: 5px; text-align: center;"></div>
 
+    <div class="io-row">
+    <button class="io-btn io-btn-small" style="background:#500; border-color:#f00;" onclick="removeMusic()">POISTA MUSIIKKI</button>
+    </div>
+
     <!-- Piilotettu tiedostosyöttö musiikille -->
     <input type="file" id="music-file-input" style="display: none" accept="audio/*" onchange="handleMusicUpload(this)">
 
@@ -423,6 +456,7 @@
     let currentBgScale = "cover";
     let currentBgImageFile = ""; // Tallentaa taustakuvan tiedostonimen
     let currentMusicFile = "";   // Tallentaa musiikin tiedostonimen
+    let currentWallImageObj = null;  // Wall texture
 
     // Elämäjärjestelmän muuttujat
     let lives = 4;
@@ -490,12 +524,21 @@
             const targetAspect = GAME_WIDTH / GAME_HEIGHT;
             const winAspect = winW / winH;
             let finalW, finalH;
+            
             if (winAspect > targetAspect) { finalH = winH; finalW = winH * targetAspect; } 
             else { finalW = winW; finalH = winW / targetAspect; }
+            
             render.canvas.style.width = `${finalW}px`;
             render.canvas.style.height = `${finalH}px`;
             scaleRatio = GAME_WIDTH / finalW; 
+
+            // Pakotetaan wrapperin koko vastaamaan canvasia.
+            // Tällöin taustakuva skaalautuu pelialueen, ei ikkunan mukaan.
+            const wrapper = document.getElementById('game-wrapper');
+            wrapper.style.width = `${finalW}px`;
+            wrapper.style.height = `${finalH}px`;
         }
+
         window.addEventListener('resize', resizeCanvas);
         resizeCanvas();
 
@@ -741,6 +784,50 @@
         Events.on(render, 'afterRender', function() {
             const ctx = render.context;
             const offX = render.bounds.min.x, offY = render.bounds.min.y;
+            
+            // --- UUSI: TEKSTUROIDUT SEINÄT (MASKATTUNA) ---
+            const allBodies = Matter.Composite.allBodies(world);
+            
+            allBodies.forEach(b => {
+                // Piirretään vain jos objektilla on customTexture
+                if (b.customTexture) {
+                    ctx.save(); // Tallennetaan tilanne
+                    
+                    // 1. LUO MASKI (LEIKKAUSALUE)
+                    ctx.beginPath();
+                    
+                    if (b.circleRadius) {
+                        // Jos se on ympyrä (esim. wall-circle)
+                        ctx.arc(b.position.x - offX, b.position.y - offY, b.circleRadius, 0, 2 * Math.PI);
+                    } else {
+                        // Jos se on monikulmio (kolmio, suorakaide, kaari)
+                        const v = b.vertices;
+                        ctx.moveTo(v[0].x - offX, v[0].y - offY);
+                        for (let j = 1; j < v.length; j++) {
+                            ctx.lineTo(v[j].x - offX, v[j].y - offY);
+                        }
+                        ctx.lineTo(v[0].x - offX, v[0].y - offY);
+                    }
+                    
+                    ctx.closePath();
+                    ctx.clip(); // <--- TÄMÄ ON SE TAIKA: Rajaa piirron vain polun sisälle
+                    
+                    // 2. PIIRRÄ KUVA
+                    // Siirretään piirtopiste objektin keskelle ja käännetään kulman mukaan
+                    ctx.translate(b.position.x - offX, b.position.y - offY);
+                    ctx.rotate(b.angle);
+                    
+                    // Lasketaan objektin leveys ja korkeus skaalausta varten
+                    const w = b.bounds.max.x - b.bounds.min.x;
+                    const h = b.bounds.max.y - b.bounds.min.y;
+                    
+                    // Piirretään kuva venytettynä objektin kokoiseksi
+                    // (Kuva piirretään keskipisteen ympärille: -w/2, -h/2)
+                    ctx.drawImage(b.customTexture, -w/2, -h/2, w, h);
+                    
+                    ctx.restore(); // Palautetaan tilanne, jotta maski ei jää päälle muille objekteille
+                }
+            });
 
             // 1. RAILS DRAWING (Under the ball, but over walls)
             const bodies = Matter.Composite.allBodies(world);
@@ -893,6 +980,41 @@
         defaultBg.src = 'background.jpg';
 
         populateLevelSelect();
+
+        // Kosketusnäytön ohjaus
+        ['btn-s', 'btn-j', 'btn-l'].forEach(id => {
+            const btn = document.getElementById(id);
+            const code = btn.getAttribute('data-key'); // "KeyS", "KeyJ", "KeyL"
+            
+            // Estetään default (esim. tekstin valinta tai zoom)
+            btn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                keys[code] = true;
+                btn.classList.add('pressed');
+                
+                // Valikko-ohjaus kosketuksella
+                if (gameState === 'intro' && code === 'KeyJ') startGame();
+                if (gameState === 'gameover' && code === 'KeyJ') goToIntro();
+            }, { passive: false });
+
+            btn.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                keys[code] = false;
+                btn.classList.remove('pressed');
+            }, { passive: false });
+            
+            // Varmistus hiirelle
+            btn.addEventListener('mousedown', (e) => {
+                keys[code] = true;
+                btn.classList.add('pressed');
+                if (gameState === 'intro' && code === 'KeyJ') startGame();
+                if (gameState === 'gameover' && code === 'KeyJ') goToIntro();
+            });
+            btn.addEventListener('mouseup', () => {
+                keys[code] = false;
+                btn.classList.remove('pressed');
+            });
+        });
     }
 
     // --- LEVEL SELECTION & INTRO ---
@@ -908,6 +1030,21 @@
         if (typeof Level3 !== 'undefined') {
             const opt = document.createElement('option'); opt.value = 'Level3'; opt.text = "Level 3"; select.add(opt);
         }
+    }
+
+    function updateVolume(val) {
+        const audio = document.getElementById('bg-audio');
+        audio.volume = val / 100;
+    }
+
+    function removeMusic() {
+        const audio = document.getElementById('bg-audio');
+        audio.pause();
+        audio.src = "";
+        currentMusicFile = "";
+        document.getElementById('music-name-display').innerText = "";
+        // Tyhjennetään input jotta saman tiedoston voi valita uudestaan
+        document.getElementById('music-file-input').value = ""; 
     }
 
     function updateBgScale(val) {
@@ -952,35 +1089,49 @@
 
     function startGame() {
         const levelVal = document.getElementById('level-select').value;
-        
         document.getElementById('intro-screen').style.display = 'none';
 
-        if (levelVal !== 'default') {
-            let levelData = null;
-            if (levelVal === 'Level1' && typeof Level1 !== 'undefined') levelData = Level1;
-            if (levelVal === 'Level2' && typeof Level2 !== 'undefined') levelData = Level2;
-            if (levelVal === 'Level3' && typeof Level3 !== 'undefined') levelData = Level3;
+        // Määritellään käynnistysrutiini, jota kutsutaan heti tai latauksen jälkeen
+        const startSequence = () => {
+            score = 0;
+            document.getElementById('score').innerText = score;
+            lives = 4;
+            nextExtraLifeScore = 2000;
+            isGameOver = false;
+            gameState = 'playing';
+            updateLivesUI();
             
-            if (levelData) {
-                loadLevelFromData(levelData);
+            Matter.Body.setPosition(plunger, { x: GAME_WIDTH - 25, y: GAME_HEIGHT - 60 });
+            Matter.Body.setVelocity(plunger, { x: 0, y: 0 });
+            Matter.Body.setAngularVelocity(plunger, 0);
+
+            spawnBall();
+            
+            const audio = document.getElementById('bg-audio');
+            if (currentMusicFile && audio.src) {
+                audio.play().catch(e => console.log("Audio play failed", e));
             }
+        };
+
+        if (levelVal !== 'default') {
+            // UUSI: Käytä fetchiä JSON-tiedoston lataamiseen
+            fetch(levelVal)
+                .then(response => {
+                    if (!response.ok) throw new Error("Level load failed");
+                    return response.json();
+                })
+                .then(data => {
+                    loadLevelFromData(data);
+                    startSequence();
+                })
+                .catch(err => {
+                    console.error("Virhe tason latauksessa:", err);
+                    // Jos lataus epäonnistuu, aloitetaan silti (default level)
+                    startSequence();
+                });
+        } else {
+            startSequence();
         }
-
-        score = 0;
-        document.getElementById('score').innerText = score;
-        lives = 4;
-        nextExtraLifeScore = 2000;
-        isGameOver = false;
-        gameState = 'playing';
-        updateLivesUI();
-        
-        Matter.Body.setPosition(plunger, { x: GAME_WIDTH - 25, y: GAME_HEIGHT - 60 });
-        Matter.Body.setVelocity(plunger, { x: 0, y: 0 });
-        Matter.Body.setAngularVelocity(plunger, 0);
-
-        spawnBall();
-
-        if (currentMusicFile) document.getElementById('bg-audio').play();
     }
 
     function endGame() {
@@ -1130,16 +1281,11 @@
 
                 // SEINÄN TEKSTUROINTI 
                 const isWallType = o.label === 'wall' || ['wall-long', 'wall-rect', 'wall-curve'].includes(o.customType);
-                if (currentWallTexture && isWallType && currentWallTexW > 0) {
-                    o.render.sprite.texture = currentWallTexture;
-                    
-                    // Lasketaan skaalaus myös uusille osille
-                    const bWidth = o.bounds.max.x - o.bounds.min.x;
-                    const bHeight = o.bounds.max.y - o.bounds.min.y;
-                    
-                    o.render.sprite.xScale = bWidth / currentWallTexW;
-                    o.render.sprite.yScale = bHeight / currentWallTexH;
-                    
+                if (currentWallImageObj && isWallType) {
+                    // Asetetaan customTexture
+                    o.customTexture = currentWallImageObj;
+                    // Poistetaan sprite ja väri
+                    o.render.sprite.texture = null;
                     o.render.fillStyle = 'transparent';
                 }
 
@@ -1328,13 +1474,16 @@
         if (input.files[0]) {
             const r = new FileReader();
             r.onload = e => {
-                // Luodaan väliaikainen kuva mittojen selvittämiseksi
                 const img = new Image();
                 img.src = e.target.result;
                 img.onload = () => {
-                    currentWallTexture = e.target.result;
-                    currentWallTexW = img.width;  // Tallennetaan leveys
-                    currentWallTexH = img.height; // Tallennetaan korkeus
+                    // Tallennetaan kuva-olio globaaliin muuttujaan
+                    currentWallImageObj = img;
+                    
+                    // Nämä säilyvät skaalauslaskuja varten
+                    currentWallTexW = img.width;  
+                    currentWallTexH = img.height; 
+                    
                     applyWallTextureToExisting();
                 };
             };
@@ -1353,28 +1502,21 @@
     }
 
     function applyWallTextureToExisting() {
-        if (!currentWallTexture || currentWallTexW === 0) return;
+        if (!currentWallImageObj) return;
         
         const bodies = Matter.Composite.allBodies(world);
         bodies.forEach(b => {
-            // Valitaan vain seinät, kaaret ja pitkät seinät
             if (b.label === 'wall' || b.customType === 'wall-long' || b.customType === 'wall-curve' || b.isTopArch) {
                 
-                b.render.sprite.texture = currentWallTexture;
+                // POISTETAAN Matter.js:n oma sprite käytöstä, jotta se ei piirrä suorakaidetta alle
+                b.render.sprite.texture = null; 
                 
-                // LASKETAAN SKAALAUS
-                // 1. Selvitetään objektin leveys ja korkeus (bounds)
-                const bWidth = b.bounds.max.x - b.bounds.min.x;
-                const bHeight = b.bounds.max.y - b.bounds.min.y;
-                
-                // 2. Asetetaan skaalaus: Objektin koko / Kuvan koko
-                // Matter.js piirtää spriten oletuksena alkuperäisessä koossa, 
-                // joten tämä pakottaa sen objektin mittoihin.
-                b.render.sprite.xScale = bWidth / currentWallTexW;
-                b.render.sprite.yScale = bHeight / currentWallTexH;
+                // Tallennetaan kuva omaan ominaisuuteen
+                b.customTexture = currentWallImageObj;
 
-                // Varmistetaan että väri ei peitä tekstuuria
+                // Varmistetaan että täyttöväri on läpinäkyvä, jotta vain meidän piirtämä kuva näkyy
                 b.render.fillStyle = 'transparent';
+                b.render.strokeStyle = 'transparent'; // Poistetaan myös reunaviiva halutessasi
             }
         });
     }
@@ -1577,26 +1719,41 @@
         }
     }
 
+    function mapKey(code) {
+        if (code === 'KeyS' || code === 'KeyA') return 'KeyS'; // Vasen
+        if (code === 'KeyL' || code === 'KeyD') return 'KeyL'; // Oikea
+        if (code === 'KeyJ' || code === 'KeyK' || code === 'Space') return 'KeyJ'; // Laukaisu
+        return code;
+    }
+
     window.addEventListener('keydown', e => { 
+        // Käsitellään mapatut koodit intro/gameover tilassa
+        const mappedCode = mapKey(e.code);
+
         if (gameState === 'intro') {
-            if (e.code === 'Space' || e.code === 'KeyJ') {
-                startGame();
-            }
+            if (mappedCode === 'KeyJ') startGame();
             return; 
         }
-
         if (gameState === 'gameover') {
-            if (e.code === 'Space' || e.code === 'KeyJ') {
-                goToIntro();
-            }
+            if (mappedCode === 'KeyJ') goToIntro();
             return;
         }
 
         if(e.code === 'KeyR') resetBall();
         if(e.code === 'KeyE') toggleEditMode();
-        if(keys.hasOwnProperty(e.code)) keys[e.code] = true; updateBtn(e.code, true); 
+        
+        // Asetetaan pelilogiikan käyttämä avain päälle
+        if(keys.hasOwnProperty(mappedCode)) keys[mappedCode] = true; 
+        
+        // Päivitetään visuaaliset napit (S, J, L)
+        updateBtn(mappedCode, true); 
     });
-    window.addEventListener('keyup', e => { if(keys.hasOwnProperty(e.code)) keys[e.code] = false; updateBtn(e.code, false); });
+
+    window.addEventListener('keyup', e => { 
+        const mappedCode = mapKey(e.code);
+        if(keys.hasOwnProperty(mappedCode)) keys[mappedCode] = false; 
+        updateBtn(mappedCode, false); 
+    });
     
     function updateBtn(code, active) {
         const mapping = {KeyS:'btn-s', KeyJ:'btn-j', KeyL:'btn-l'};
