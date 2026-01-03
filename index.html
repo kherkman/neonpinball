@@ -143,8 +143,8 @@
         }
 
         #level-select {
-            padding: 10px 20px;
-            font-size: 18px;
+            padding: 2px 5px;
+            font-size: 14px;
             background: #222;
             color: #0ff;
             border: 1px solid #0ff;
@@ -152,6 +152,7 @@
             font-family: inherit;
             cursor: pointer;
             box-shadow: 0 0 10px rgba(0, 255, 255, 0.2);
+            height: 25px; /* Kiinteä matala korkeus */
         }
 
         /* TYYLIT VOLUUMISÄÄTIMELLE */
@@ -257,20 +258,22 @@
             z-index: 50; pointer-events: none;
             opacity: 1; 
         }
+        /* Läpinäkyvät ohjausnapit */
         .game-btn {
             pointer-events: auto; width: 80px; height: 80px;
             border-radius: 50%;
-            background: rgba(255, 255, 255, 0.1);
-            border: 2px solid rgba(0, 255, 255, 0.3);
-            color: rgba(255, 255, 255, 0.7);
-            font-size: 24px; font-weight: bold;
+            /* Muutettu läpinäkyväksi */
+            background: transparent;
+            border: none;
+            /* Poistettu teksti näkyvistä tarvittaessa, tai pidetään debuggausta varten himmeänä */
+            color: transparent; 
+            
             display: flex; justify-content: center; align-items: center;
-            backdrop-filter: blur(2px);
             touch-action: manipulation;
         }
+
         .game-btn:active, .game-btn.pressed {
-            background: rgba(0, 255, 255, 0.4); transform: scale(0.95);
-            color: #fff; border-color: #0ff;
+            background: transparent; border: none; transform: none;
         }
     </style>
 </head>
@@ -457,6 +460,7 @@
     let currentBgImageFile = ""; // Tallentaa taustakuvan tiedostonimen
     let currentMusicFile = "";   // Tallentaa musiikin tiedostonimen
     let currentWallImageObj = null;  // Wall texture
+    let currentWallTextureFile = ""; // Tallentaa seinätekstuurin tiedostonimen
 
     // Elämäjärjestelmän muuttujat
     let lives = 4;
@@ -503,7 +507,7 @@
     function init() {
         const { Engine, Render, Runner, Bodies, Composite, Constraint, Body, Events } = Matter;
 
-        engine = Engine.create({ positionIterations: 60, velocityIterations: 60 });
+        engine = Engine.create({ positionIterations: 80, velocityIterations: 80 });
         world = engine.world;
         engine.gravity.y = 0.75; 
 
@@ -697,7 +701,33 @@
                         b.render.fillStyle = '#ffffff'; 
                     }
 
-                    if (b.customType === 'led') { scoreAdded += 50; b.flashTimer = 15; b.render.fillStyle = '#00ffff'; }
+                    if (b.customType === 'led') {
+                        // Sytytetään valo pysyvästi, jos se ei ole jo päällä
+                        if (!b.isOn) {
+                            b.isOn = true;
+                            b.render.fillStyle = '#00ffff'; // Kirkas väri
+                            scoreAdded += 50;
+
+                            // Tarkistetaan onko ryhmän kaikki LEDit päällä
+                            // Etsitään kaikki saman ryhmän ledit
+                            const allLeds = Matter.Composite.allBodies(world).filter(body => 
+                                body.customType === 'led' && body.groupId === b.groupId
+                            );
+                            
+                            // Ovatko kaikki päällä?
+                            const allLit = allLeds.every(l => l.isOn);
+
+                            if (allLit) {
+                                scoreAdded += 3000; // BONUS
+                                // Sammutetaan kaikki ja palautetaan väri
+                                allLeds.forEach(l => {
+                                    l.isOn = false;
+                                    l.render.fillStyle = '#000044';
+                                });
+                            }
+                        }
+                        // Huom: Ei aseteta flashTimeria, jotta valo ei sammu itsestään
+                    }
                     
                     if (b.customType === 'drop-target') {
                         scoreAdded += 500;
@@ -897,18 +927,20 @@
                         if (b.flashTimer > 0) {
                             b.flashTimer--;
                             if (b.flashTimer === 0) {
-                                if (b.originalColor) {
-                                    b.render.fillStyle = b.originalColor;
-                                } 
-                                else if (b.customType === 'led') {
-                                    b.render.fillStyle = '#000044';
-                                }
-                                else if (b.customType === 'slingshot' && !b.originalColor) {
-                                    b.render.fillStyle = COLORS.boost;
-                                }
-                                // KORJAUS: Palautetaan bumpperin väri
-                                else if (b.label === 'bumper') {
-                                    b.render.fillStyle = COLORS.bumper;
+                                if (b.customType !== 'led') {
+                                    if (b.originalColor) {
+                                        b.render.fillStyle = b.originalColor;
+                                    } 
+                                    else if (b.customType === 'led') {
+                                        b.render.fillStyle = '#000044';
+                                    }
+                                    else if (b.customType === 'slingshot' && !b.originalColor) {
+                                        b.render.fillStyle = COLORS.boost;
+                                    }
+                                    // KORJAUS: Palautetaan bumpperin väri
+                                    else if (b.label === 'bumper') {
+                                        b.render.fillStyle = COLORS.bumper;
+                                    }
                                 }
                             }
                         }
@@ -981,41 +1013,70 @@
 
         populateLevelSelect();
 
-        // Kosketusnäytön ohjaus
-        ['btn-s', 'btn-j', 'btn-l'].forEach(id => {
-            const btn = document.getElementById(id);
-            const code = btn.getAttribute('data-key'); // "KeyS", "KeyJ", "KeyL"
-            
-            // Estetään default (esim. tekstin valinta tai zoom)
-            btn.addEventListener('touchstart', (e) => {
-                e.preventDefault();
-                keys[code] = true;
-                btn.classList.add('pressed');
-                
-                // Valikko-ohjaus kosketuksella
-                if (gameState === 'intro' && code === 'KeyJ') startGame();
-                if (gameState === 'gameover' && code === 'KeyJ') goToIntro();
-            }, { passive: false });
 
-            btn.addEventListener('touchend', (e) => {
-                e.preventDefault();
-                keys[code] = false;
-                btn.classList.remove('pressed');
-            }, { passive: false });
+
+        // Kosketusnäytön ohjaus
+        const wrapper = document.getElementById('game-wrapper');
+
+        // Kosketus alkaa
+        wrapper.addEventListener('touchstart', (e) => {
+            e.preventDefault(); // Estää zoomauksen ja scrollauksen
             
-            // Varmistus hiirelle
-            btn.addEventListener('mousedown', (e) => {
-                keys[code] = true;
-                btn.classList.add('pressed');
-                if (gameState === 'intro' && code === 'KeyJ') startGame();
-                if (gameState === 'gameover' && code === 'KeyJ') goToIntro();
-            });
-            btn.addEventListener('mouseup', () => {
-                keys[code] = false;
-                btn.classList.remove('pressed');
-            });
-        });
+            // Käydään läpi kaikki aktiiviset kosketuspisteet (multitouch)
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                const touch = e.changedTouches[i];
+                handleTouchInput(touch.clientX, true); // true = painettu
+            }
+        }, { passive: false });
+
+        // Kosketus loppuu
+        wrapper.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                const touch = e.changedTouches[i];
+                handleTouchInput(touch.clientX, false); // false = vapautettu
+            }
+        }, { passive: false });
+
+        // Apufunktio kosketusalueiden tunnistamiseen
+        function handleTouchInput(clientX, isDown) {
+            
+            // 1. VALIKKO-OHJAUS (Lisätty vanhasta koodista)
+            if (isDown) {
+                if (gameState === 'intro') {
+                    startGame();
+                    return;
+                }
+                if (gameState === 'gameover') {
+                    goToIntro();
+                    return;
+                }
+            }
+            
+            // Jos peli ei ole käynnissä, ei tehdä muuta
+            if (gameState !== 'playing') return;
+
+            // 2. LAUKAISU (Plunger)
+            // Jos pallo on laukaisukujalla (X > 440)
+            if (ball && ball.position.x > GAME_WIDTH - 60) {
+                keys.KeyJ = isDown;
+                updateBtn('KeyJ', isDown); 
+                return; 
+            }
+
+            // 3. FLIPPERIT (Vasen / Oikea puoli ruudusta)
+            const screenMid = window.innerWidth / 2;
+            
+            if (clientX < screenMid) {
+                keys.KeyS = isDown; // Vasen
+                updateBtn('KeyS', isDown);
+            } else {
+                keys.KeyL = isDown; // Oikea
+                updateBtn('KeyL', isDown);
+            }
+        }
     }
+    
 
     // --- LEVEL SELECTION & INTRO ---
 
@@ -1450,7 +1511,17 @@
     function resetBall() { 
         if(gameState !== 'playing') return;
         applyPenalty(); 
-        spawnBall(); 
+        
+        // Vähennetään elämä
+        lives--;
+        updateLivesUI();
+
+        // Jos elämät loppui, peli päättyy. Muuten spawnataan pallo.
+        if (lives <= 0) {
+            endGame();
+        } else {
+            spawnBall(); 
+        }
     }
 
     function updatePower(val) { plungerSpring.stiffness = 0.1 + (val/100)*0.9; document.getElementById('power-val').innerText = val + "%"; }
@@ -1472,18 +1543,15 @@
 
     function loadWallTexture(input) {
         if (input.files[0]) {
+            currentWallTextureFile = input.files[0].name; // TALLENNETAAN NIMI
             const r = new FileReader();
             r.onload = e => {
                 const img = new Image();
                 img.src = e.target.result;
                 img.onload = () => {
-                    // Tallennetaan kuva-olio globaaliin muuttujaan
                     currentWallImageObj = img;
-                    
-                    // Nämä säilyvät skaalauslaskuja varten
                     currentWallTexW = img.width;  
                     currentWallTexH = img.height; 
-                    
                     applyWallTextureToExisting();
                 };
             };
@@ -1614,11 +1682,12 @@
         const data = {
             topArch: currentTopOffset,
             bgScale: currentBgScale,
-            bgImage: currentBgImageFile, // Tallentaa kuvan nimen
-            music: currentMusicFile,      // Tallentaa musiikin nimen
-            bgX: bgPosX,                  // UUSI: Tallentaa taustan X-sijainnin
-            bgY: bgPosY,                  // UUSI: Tallentaa taustan Y-sijainnin
+            bgImage: currentBgImageFile,
+            music: currentMusicFile,
+            bgX: bgPosX,
+            bgY: bgPosY,
             bgFade: currentBgFade,
+            wallTexture: currentWallTextureFile, 
             items: items
         };
         
@@ -1709,6 +1778,24 @@
             const scaleVal = currentBgScale === "cover" ? 100 : parseInt(currentBgScale);
             document.getElementById('bg-size-slider').value = scaleVal;
             document.getElementById('bg-size-val').innerText = currentBgScale;
+        }
+
+        // SEINÄTEKSTUURIN LATAUS
+        if (data.wallTexture) {
+            currentWallTextureFile = data.wallTexture;
+            const img = new Image();
+            img.src = data.wallTexture; // Oletetaan kuvan olevan juurihakemistossa
+            img.onload = () => {
+                currentWallImageObj = img;
+                currentWallTexW = img.width;
+                currentWallTexH = img.height;
+                applyWallTextureToExisting();
+            };
+        } else {
+            // Jos tallennuksessa ei ollut tekstuuria, nollataan se
+            currentWallTextureFile = "";
+            currentWallImageObj = null;
+            removeWallTexture();
         }
 
         // 5. Luo objektit
