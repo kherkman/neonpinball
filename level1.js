@@ -1,4 +1,4 @@
-{
+const Level1 = {
   "topArch": 0,
   "bgScale": "91%",
   "bgImage": "planetview.jpg",
@@ -143,4 +143,4 @@
       "gid": 1767463794929
     }
   ]
-}
+};
