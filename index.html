@@ -142,18 +142,93 @@
             50% { transform: translateY(-20px); }
         }
 
-        #level-select {
-            padding: 2px 5px;
-            font-size: 14px;
-            background: #222;
-            color: #0ff;
-            border: 1px solid #0ff;
-            margin-bottom: 10px;
-            font-family: inherit;
-            cursor: pointer;
-            box-shadow: 0 0 10px rgba(0, 255, 255, 0.2);
-            height: 25px; /* Kiinteä matala korkeus */
+        #level-list-container {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            margin-bottom: 20px;
+            width: 260px; /* Hieman leveämpi scrollbarin takia */
+            
+            /* SCROLLAUS-ASETUKSET */
+            max-height: 200px;      /* Jos lista on tätä korkeampi, scrollbar ilmestyy */
+            overflow-y: auto;       /* Sallii pystyskrollauksen */
+            overflow-x: hidden;     /* Estää sivuttaisskrollauksen */
+            
+            /* Ulkonäkö */
+            padding: 5px;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid #333;
+            border-radius: 4px;
         }
+
+        /* --- KUSTOMOITU SCROLLBAR (Neon-tyyli) --- */
+        
+        /* Itse palkin leveys */
+        #level-list-container::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        /* Palkin tausta (ura) */
+        #level-list-container::-webkit-scrollbar-track {
+            background: #111;
+            border-radius: 4px;
+        }
+
+        /* Liikkuva osa (peukalo) */
+        #level-list-container::-webkit-scrollbar-thumb {
+            background: #008888; /* Tummempi syaani */
+            border-radius: 4px;
+            border: 1px solid #00aaaa;
+        }
+
+        /* Liikkuva osa kun hiiri on päällä */
+        #level-list-container::-webkit-scrollbar-thumb:hover {
+            background: #00ffff; /* Kirkas syaani */
+        }
+
+        /* NAPPIEN TYYLIT */
+        .level-btn {
+            padding: 10px;
+            border: 1px solid #0ff;
+            color: #0ff;
+            background: rgba(0, 0, 0, 0.5);
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            box-shadow: 0 0 5px rgba(0, 255, 255, 0.1);
+            flex-shrink: 0; /* Estää nappeja litistymästä kasaan */
+        }
+
+        .level-btn {
+            padding: 10px;
+            border: 1px solid #0ff;
+            color: #0ff;
+            background: rgba(0, 0, 0, 0.5);
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            box-shadow: 0 0 5px rgba(0, 255, 255, 0.1);
+        }
+
+        .level-btn:hover {
+            background: rgba(0, 255, 255, 0.1);
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.3);
+        }
+
+        /* VALITUN TASON TYYLI (Maalattu tausta) */
+        .level-btn.active {
+            background: #0ff;       /* Syaani tausta */
+            color: #000;            /* Musta teksti */
+            font-weight: bold;
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.8);
+            border-color: #fff;
+            transform: scale(1.02); /* Hieman isompi */
+        }
+
+
+
 
         /* TYYLIT VOLUUMISÄÄTIMELLE */
         #volume-control {
@@ -295,12 +370,14 @@
     <h1>NEON PINBALL</h1>
     <div class="intro-ball"></div>
     <button id="start-game-btn" onclick="startGame()">START GAME</button>
-    <div class="key-hint">[ SPACE ] or [ J ] to Select</div>
-    <select id="level-select">
-    <option value="level1.json">Level 1</option>
-    <option value="level2.json">Level 2</option>
-    <option value="level3.json">Level 3</option>
-    <option value="default">Default Table</option>
+    <div class="key-hint">Press [ SPACE ] to Select</div>
+    <div id="level-list-container">
+        <!-- data-value ATTRIBUUTTI JOKAISEEN NAPPIIN: -->
+        <div class="level-btn active" data-value="level1.json" onclick="chooseLevel(this, 'level1.json')">Level 1</div>
+        <div class="level-btn" data-value="level2.json" onclick="chooseLevel(this, 'level2.json')">Level 2</div>
+        <div class="level-btn" data-value="level3.json" onclick="chooseLevel(this, 'level3.json')">Level 3</div>
+        <div class="level-btn" data-value="default" onclick="chooseLevel(this, 'default')">Default Table</div>
+    </div>
 </select>  
 
 </div>
@@ -455,6 +532,7 @@
     
     // Tila: 'intro', 'playing', 'gameover'
     let gameState = 'intro';
+    let selectedLevelValue = 'level1.json';
 
     let currentBgScale = "cover";
     let currentBgImageFile = ""; // Tallentaa taustakuvan tiedostonimen
@@ -507,7 +585,7 @@
     function init() {
         const { Engine, Render, Runner, Bodies, Composite, Constraint, Body, Events } = Matter;
 
-        engine = Engine.create({ positionIterations: 80, velocityIterations: 80 });
+        engine = Engine.create({ positionIterations: 100, velocityIterations: 100 }); // Iterointitarkkuus suuri, jotta pallo ei menisi flipperin läpi
         world = engine.world;
         engine.gravity.y = 0.75; 
 
@@ -766,7 +844,7 @@
                     document.getElementById('score').innerText = score;
                     if (score >= nextExtraLifeScore) {
                         lives++;
-                        nextExtraLifeScore += 2000;
+                        nextExtraLifeScore += 5000;  // Tarvittava pistemäärä ensimmäistä lisäelämää seuraavia lisäelämiä varten
                         updateLivesUI();
                     }
                 }
@@ -1011,7 +1089,7 @@
         defaultBg.onload = () => document.getElementById('game-wrapper').style.backgroundImage = 'url(background.jpg)';
         defaultBg.src = 'background.jpg';
 
-        populateLevelSelect();
+        
 
 
 
@@ -1080,17 +1158,32 @@
 
     // --- LEVEL SELECTION & INTRO ---
 
-    function populateLevelSelect() {
-        const select = document.getElementById('level-select');
-        if (typeof Level1 !== 'undefined') {
-            const opt = document.createElement('option'); opt.value = 'Level1'; opt.text = "Level 1"; select.add(opt);
-        }
-        if (typeof Level2 !== 'undefined') {
-            const opt = document.createElement('option'); opt.value = 'Level2'; opt.text = "Level 2"; select.add(opt);
-        }
-        if (typeof Level3 !== 'undefined') {
-            const opt = document.createElement('option'); opt.value = 'Level3'; opt.text = "Level 3"; select.add(opt);
-        }
+
+    function chooseLevel(element, value) {
+        // 1. Päivitä muuttuja
+        selectedLevelValue = value;
+
+        // 2. Poista 'active' luokka kaikista napeista
+        document.querySelectorAll('.level-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+
+        // 3. Lisää 'active' luokka klikattuun nappiin
+        element.classList.add('active');
+    }
+
+    function selectLevelByIndex(index) {
+        const btns = document.querySelectorAll('.level-btn');
+        if (index < 0 || index >= btns.length) return;
+
+        const targetBtn = btns[index];
+        const val = targetBtn.getAttribute('data-value');
+
+        // Päivitetään valinta käyttäen olemassa olevaa logiikkaa
+        chooseLevel(targetBtn, val);
+
+        // UUSI: Skrollataan lista automaattisesti, jos nappi ei ole näkyvissä
+        targetBtn.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
 
     function updateVolume(val) {
@@ -1149,7 +1242,7 @@
     }
 
     function startGame() {
-        const levelVal = document.getElementById('level-select').value;
+        const levelVal = selectedLevelValue; 
         document.getElementById('intro-screen').style.display = 'none';
 
         // Määritellään käynnistysrutiini, jota kutsutaan heti tai latauksen jälkeen
@@ -1157,7 +1250,7 @@
             score = 0;
             document.getElementById('score').innerText = score;
             lives = 4;
-            nextExtraLifeScore = 2000;
+            nextExtraLifeScore = 5000;  // Tarvittava pistemäärä ensimmäistä lisäelämää varten
             isGameOver = false;
             gameState = 'playing';
             updateLivesUI();
@@ -1818,9 +1911,35 @@
         const mappedCode = mapKey(e.code);
 
         if (gameState === 'intro') {
-            if (mappedCode === 'KeyJ') startGame();
-            return; 
+            const btns = document.querySelectorAll('.level-btn');
+            // Etsitään nykyisen aktiivisen napin indeksi
+            let currentIndex = -1;
+            btns.forEach((btn, i) => {
+                if (btn.classList.contains('active')) currentIndex = i;
+            });
+
+            if (e.code === 'ArrowDown') {
+                e.preventDefault(); // Estää sivun skrollauksen
+                const nextIndex = (currentIndex + 1) < btns.length ? currentIndex + 1 : currentIndex;
+                selectLevelByIndex(nextIndex);
+                return;
+            }
+            
+            if (e.code === 'ArrowUp') {
+                e.preventDefault();
+                const prevIndex = (currentIndex - 1) >= 0 ? currentIndex - 1 : 0;
+                selectLevelByIndex(prevIndex);
+                return;
+            }
+
+            // Space tai Enter käynnistää pelin (tai mapKey 'KeyJ' alempana hoitaa sen myös)
+            if (e.code === 'Space' || e.code === 'Enter') {
+                e.preventDefault();
+                startGame();
+                return;
+            }
         }
+
         if (gameState === 'gameover') {
             if (mappedCode === 'KeyJ') goToIntro();
             return;
