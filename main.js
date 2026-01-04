@@ -887,8 +887,8 @@ const COLORS = {
             else if (levelVal === 'level2.js' && typeof Level2 !== 'undefined') levelData = Level2;
             else if (levelVal === 'level3.js' && typeof Level3 !== 'undefined') levelData = Level3;
             else if (levelVal === 'level4.js' && typeof Level4 !== 'undefined') levelData = Level4;
-            
-            
+            else if (levelVal === 'level5.js' && typeof Level5 !== 'undefined') levelData = Level5;
+            // else if (levelVal === 'level6.js' && typeof Level6 !== 'undefined') levelData = Level6;
 
             if (levelData) {
                 loadLevelFromData(levelData);
