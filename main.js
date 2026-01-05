@@ -18,6 +18,7 @@ const COLORS = {
     let selectedLevelValue = 'level1.js';
 
     let currentBgScale = "cover";
+    let currentBgFade = 0;
     let currentBgImageFile = ""; // Tallentaa taustakuvan tiedostonimen
     let currentMusicFile = "";   // Tallentaa musiikin tiedostonimen
     let currentWallImageObj = null;  // Wall texture
@@ -373,16 +374,50 @@ const COLORS = {
 
                     // --- SWITCH & GATE ---
                     if (b.customType === 'switch' && other.label === 'ball') {
-                        // Vaihdetaan väri
-                        b.render.fillStyle = '#00ff00'; // Vihreä
-                        // Etsitään linkitetty portti
+                        
+                        // 1. COOLTIME (JÄÄHY)
+                        // Haetaan nykyinen aika millisekunneissa
+                        const now = Date.now();
+                        
+                        // Jos edellisestä osumasta on alle 1000ms (1 sekunti), lopetetaan heti.
+                        // Voit muuttaa lukua 1000 pienemmäksi (esim. 500), jos haluat nopeamman kytkimen.
+                        if (b.lastHitTime && now - b.lastHitTime < 1000) {
+                            console.log("Kytkin jäähyllä...");
+                            return; 
+                        }
+
+                        // Tallennetaan uusi osuma-aika muistiin
+                        b.lastHitTime = now;
+
+
+                        // 2. VARSINAINEN TOIMINTA
+                        console.log("Kytkin aktivoitu! Etsitään porttia ID:llä:", b.targetGateId);
+
                         if (b.targetGateId) {
-                            const gate = Matter.Composite.get(world, b.targetGateId, 'body');
+                            const allBodies = Matter.Composite.allBodies(world);
+                            
+                            // Käytetään == jotta "54" ja 54 toimivat molemmat
+                            const gate = allBodies.find(body => body.id == b.targetGateId);
+
                             if (gate) {
-                                // Avataan portti (tehdään siitä sensori tai siirretään pois)
-                                // Tässä tehdään sensori: pallo menee läpi
-                                gate.isSensor = !gate.isSensor; // Toggle auki/kiinni
-                                gate.render.fillStyle = gate.isSensor ? 'rgba(139, 69, 19, 0.3)' : '#8B4513';
+                                // Vaihdetaan tilaa
+                                gate.isSensor = !gate.isSensor; 
+
+                                if (gate.isSensor) {
+                                    // AUKI (Vihreä kytkin)
+                                    gate.render.opacity = 0.2; 
+                                    gate.render.fillStyle = '#8B4513'; 
+                                    b.render.fillStyle = '#00ff00';
+                                    console.log("Portti AUKI");
+                                } else {
+                                    // KIINNI (Punainen kytkin)
+                                    gate.render.opacity = 1; 
+                                    gate.render.fillStyle = '#8B4513';
+                                    b.render.fillStyle = '#ff0000';
+                                    console.log("Portti KIINNI");
+                                }
+                            } else {
+                                console.log("VIRHE: Porttia ei löytynyt.");
                             }
                         }
                     }
@@ -1016,15 +1051,19 @@ const COLORS = {
                 alert("Mover luotu. Klikkaa nyt kohtaa, johon Mover liikkuu.");
             }
         }
-        else if (type === 'switch-gate') {
+        // KORJAUS: Hyväksytään sekä editorin 'switch-gate' että latauksen 'switch'
+        else if (type === 'switch-gate' || type === 'switch') {
             newObj = PinballComponents.createSwitch(world, startX, startY, scale);
             
-            // Jos luodaan uutta editorissa (ei extraProps), aloitetaan asetusvaihe.
-            // Jos ladataan, linkitys tapahtuu myöhemmin loadLevelFromData-funktiossa.
-            if (isEditing && !extraProps) {
+            // Jos luodaan uutta editorissa (ei extraProps) JA tyyppi on nimenomaan yhdistelmä
+            if (isEditing && !extraProps && type === 'switch-gate') {
                 pendingComponent = { body: newObj, type: 'gate_place' };
                 alert("Kytkin luotu. Klikkaa nyt kohtaa, johon Portti tulee.");
             }
+        }
+        // KORJAUS: Lisätty käsittely portille latausta varten
+        else if (type === 'gate') {
+            newObj = PinballComponents.createGate(world, startX, startY, scale);
         }
         else if (type === 'paddle') {
             newObj = PinballComponents.createPaddle(world, startX, startY, scale);
@@ -1119,9 +1158,6 @@ const COLORS = {
             // Lisätään fysiikkamaailmaan.
             // PinballComponents-tehdasfunktiot lisäävät yleensä kappaleet itse maailmaan.
             // Perusmuodot (else-lohko yllä) EIVÄT lisää itseään, joten ne pitää lisätä tässä.
-            // Tarkistetaan onko kyseessä perusmuoto (joka ei ole array ja jota ei ole lisätty tehtaassa).
-            // Yksinkertaisuuden vuoksi: Matter.Composite.add estää duplikaatit automaattisesti,
-            // joten voimme turvallisesti yrittää lisätä objektin, jos se on yksittäinen body.
             if (!Array.isArray(newObj)) {
                 Matter.Composite.add(world, newObj);
             }
