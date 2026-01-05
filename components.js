@@ -142,6 +142,9 @@ const PinballComponents = {
                 // Tallennetaan alkuperäinen luontipiste (pivot).
                 seg.originX = x;
                 seg.originY = y;
+
+                // UUSI: Seurataan käyttäjän tekemää rotaatiota erikseen (alussa 0)
+                seg.customRotation = 0;
                 
                 parts.push(seg);
             }
